@@ -2,6 +2,16 @@ import { TFile, Vault, normalizePath } from 'obsidian';
 import { ConfigManager } from './ConfigManager';
 import { getAudioExtensions } from './audio';
 
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+
+export function isImageExtension(ext: string): boolean {
+  return IMAGE_EXTENSIONS.includes(ext.toLowerCase());
+}
+
+export function getImageExtensions(): string[] {
+  return IMAGE_EXTENSIONS;
+}
+
 /**
  * Utility functions for filtering files based on index path and excluded paths
  */
@@ -43,7 +53,12 @@ function matchesExclusionPattern(filePath: string, pattern: string): boolean {
   );
 }
 
-const INDEXABLE_EXTENSIONS = ['md', 'pdf', ...getAudioExtensions()];
+const INDEXABLE_EXTENSIONS = [
+  'md',
+  'pdf',
+  ...getAudioExtensions(),
+  ...IMAGE_EXTENSIONS,
+];
 
 /**
  * Check if a file should be indexed based on configuration

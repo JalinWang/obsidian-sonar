@@ -2,7 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
-import { resolveServerPath } from './llamaCppUtils';
+import { resolveServerPath } from './llamacpp/llamaCppUtils';
 import { formatDuration } from './utils';
 
 interface AudioLogger {

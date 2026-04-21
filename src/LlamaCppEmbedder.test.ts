@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import type { LlamaCppEmbedder } from './LlamaCppEmbedder';
+import type { LlamaCppEmbedder } from './llamacpp/LlamaCppEmbedder';
 import {
   setupTestEmbedder,
   cleanupTestEmbedder,

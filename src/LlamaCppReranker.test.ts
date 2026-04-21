@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { LlamaCppReranker } from './LlamaCppReranker';
+import { LlamaCppReranker } from './llamacpp/LlamaCppReranker';
 import { DEFAULT_SETTINGS } from './config';
 import { createMockConfigManager } from './test-helpers/mock-config-manager';
 

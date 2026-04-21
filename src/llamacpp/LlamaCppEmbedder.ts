@@ -1,8 +1,9 @@
 import type { ChildProcess } from 'child_process';
-import type { ConfigManager } from './ConfigManager';
-import { sonarState, type ModelStatus } from './SonarState';
-import { WithLogging } from './WithLogging';
-import { progressiveWait } from './utils';
+import type { ConfigManager } from '../ConfigManager';
+import type { Embedder } from '../Embedder';
+import { sonarState, type ModelStatus } from '../SonarState';
+import { WithLogging } from '../WithLogging';
+import { progressiveWait } from '../utils';
 import {
   isModelCached,
   downloadModel,
@@ -21,7 +22,7 @@ import {
  * Embedding generation using llama.cpp
  * Manages llama.cpp server process and uses its API for embeddings and tokenization
  */
-export class LlamaCppEmbedder extends WithLogging {
+export class LlamaCppEmbedder extends WithLogging implements Embedder {
   protected readonly componentName = 'LlamaCppEmbedder';
 
   private _status: ModelStatus = 'uninitialized';
@@ -263,8 +264,6 @@ export class LlamaCppEmbedder extends WithLogging {
       const isHealthy = await this.httpHealthCheck();
       if (!isHealthy) {
         this.warn(`llama.cpp server on port ${this.port} became unresponsive`);
-        // Don't auto-restart for now, just log the issue
-        // In the future, could implement auto-restart logic here
       }
     }, 60000);
   }

@@ -13,11 +13,12 @@ import {
   shouldIndexFile,
   getFilesToIndex,
   getIndexableFilesCount,
+  isImageExtension,
 } from './fileFilters';
 import { type ChunkMetadata, MetadataStore } from './MetadataStore';
 import { EmbeddingStore } from './EmbeddingStore';
 import { createChunks, type Chunk } from './chunker';
-import type { LlamaCppEmbedder } from './LlamaCppEmbedder';
+import type { Embedder } from './Embedder';
 import { BM25Store } from './BM25Store';
 import {
   formatBytes,
@@ -64,6 +65,8 @@ interface FileContent {
   text: string;
   pdfPages?: PdfPage[];
   audioSegments?: AudioSegment[];
+  isImage?: boolean;
+  imageBase64?: string;
 }
 
 interface SyncStats {
@@ -97,7 +100,7 @@ export class IndexManager extends WithLogging {
     private metadataStore: MetadataStore,
     private embeddingStore: EmbeddingStore,
     private bm25Store: BM25Store,
-    private embedder: LlamaCppEmbedder,
+    private embedder: Embedder,
     private vault: Vault,
     private workspace: Workspace,
     protected configManager: ConfigManager
@@ -218,6 +221,20 @@ export class IndexManager extends WithLogging {
         logger,
       });
       return { text: result.text, audioSegments: result.segments };
+    }
+
+    if (file.extension && isImageExtension(file.extension)) {
+      const buffer = await this.vault.readBinary(file);
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      const mimeType =
+        file.extension === 'svg' ? 'image/svg+xml' : `image/${file.extension}`;
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+      return { text: file.basename, isImage: true, imageBase64: dataUrl };
     }
 
     // Default: markdown or other text files
@@ -595,6 +612,8 @@ export class IndexManager extends WithLogging {
       indexedAt: number;
       pdfPages?: PdfPage[];
       audioSegments?: AudioSegment[];
+      isImage?: boolean;
+      imageBase64?: string;
     }
 
     const fileChunkDataList: FileChunkData[] = [];
@@ -625,14 +644,17 @@ export class IndexManager extends WithLogging {
       }
       timings.fileRead += Date.now() - readStart;
 
-      const chunkStart = Date.now();
-      const chunks = await createChunks(
-        fileContent.text,
-        this.configManager.get('maxChunkSize'),
-        this.configManager.get('chunkOverlap'),
-        this.embedder
-      );
-      timings.chunking += Date.now() - chunkStart;
+      let chunks: Chunk[] = [];
+      if (!fileContent.isImage) {
+        const chunkStart = Date.now();
+        chunks = await createChunks(
+          fileContent.text,
+          this.configManager.get('maxChunkSize'),
+          this.configManager.get('chunkOverlap'),
+          this.embedder
+        );
+        timings.chunking += Date.now() - chunkStart;
+      }
 
       fileChunkDataList.push({
         operation,
@@ -641,6 +663,8 @@ export class IndexManager extends WithLogging {
         indexedAt: Date.now(),
         pdfPages: fileContent.pdfPages,
         audioSegments: fileContent.audioSegments,
+        isImage: fileContent.isImage,
+        imageBase64: fileContent.imageBase64,
       });
 
       if (opIndex % 10 === 0 || opIndex === indexOperations.length - 1) {
@@ -651,39 +675,6 @@ export class IndexManager extends WithLogging {
       }
     }
 
-    // Step 2: Process embeddings in batches
-    // Prepare all texts (titles + chunks) with metadata
-    interface TextItem {
-      text: string;
-      fileIndex: number;
-      type: 'title' | 'chunk';
-      chunkIndex?: number;
-    }
-
-    const allTextItems: TextItem[] = [];
-    for (let fileIndex = 0; fileIndex < fileChunkDataList.length; fileIndex++) {
-      const { file, chunks } = fileChunkDataList[fileIndex];
-
-      allTextItems.push({
-        text: file.basename,
-        fileIndex,
-        type: 'title',
-      });
-
-      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-        allTextItems.push({
-          text: chunks[chunkIndex].content,
-          fileIndex,
-          type: 'chunk',
-          chunkIndex,
-        });
-      }
-    }
-
-    const batchSize = this.configManager.get('indexingBatchSize');
-    this.log(
-      `Processing ${allTextItems.length} texts in batches of ${batchSize}...`
-    );
     const fileEmbeddingsMap = new Map<
       number,
       Array<{
@@ -694,6 +685,74 @@ export class IndexManager extends WithLogging {
     >();
     const filesWithNaN = new Set<number>();
     const writtenFilePaths: string[] = [];
+
+    // Step 2a: Process image files with multimodal embedding
+    if (this.embedder.getImageEmbedding) {
+      const imageFiles = fileChunkDataList.filter(d => d.isImage);
+      if (imageFiles.length > 0) {
+        this.log(`Embedding ${imageFiles.length} image files...`);
+      }
+      for (const data of imageFiles) {
+        if (this.isCancelled) break;
+        if (!data.imageBase64) continue;
+        const fileIndex = fileChunkDataList.indexOf(data);
+        try {
+          const embeddingStart = Date.now();
+          const imageEmb = await this.embedder.getImageEmbedding({
+            image: data.imageBase64,
+          });
+          timings.embeddingGeneration += Date.now() - embeddingStart;
+
+          if (!fileEmbeddingsMap.has(fileIndex)) {
+            fileEmbeddingsMap.set(fileIndex, []);
+          }
+          fileEmbeddingsMap.get(fileIndex)!.push({
+            type: 'chunk',
+            chunkIndex: 0,
+            embedding: imageEmb,
+          });
+        } catch (error) {
+          this.warn(`Failed to embed image ${data.file.path}: ${error}`);
+          filesWithNaN.add(fileIndex);
+          errorCount++;
+        }
+      }
+    }
+
+    // Step 2b: Process text embeddings in batches
+    interface TextItem {
+      text: string;
+      fileIndex: number;
+      type: 'title' | 'chunk';
+      chunkIndex?: number;
+    }
+
+    const allTextItems: TextItem[] = [];
+    for (let fileIndex = 0; fileIndex < fileChunkDataList.length; fileIndex++) {
+      const { file, chunks, isImage } = fileChunkDataList[fileIndex];
+
+      allTextItems.push({
+        text: file.basename,
+        fileIndex,
+        type: 'title',
+      });
+
+      if (!isImage) {
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          allTextItems.push({
+            text: chunks[chunkIndex].content,
+            fileIndex,
+            type: 'chunk',
+            chunkIndex,
+          });
+        }
+      }
+    }
+
+    const batchSize = this.configManager.get('indexingBatchSize');
+    this.log(
+      `Processing ${allTextItems.length} texts in batches of ${batchSize}...`
+    );
 
     for (let i = 0; i < allTextItems.length; i += batchSize) {
       if (this.isCancelled) {
@@ -766,8 +825,10 @@ export class IndexManager extends WithLogging {
 
       const completedFileIndices: number[] = [];
       for (const [fileIndex, embeddings] of fileEmbeddingsMap.entries()) {
-        const { chunks } = fileChunkDataList[fileIndex];
-        const expectedCount = 1 + chunks.length; // title + chunks
+        const { chunks, isImage } = fileChunkDataList[fileIndex];
+        const expectedCount = isImage
+          ? 2 // title + image embedding
+          : 1 + chunks.length; // title + text chunks
         if (embeddings.length === expectedCount) {
           completedFileIndices.push(fileIndex);
         }
@@ -786,6 +847,7 @@ export class IndexManager extends WithLogging {
             indexedAt,
             pdfPages,
             audioSegments,
+            isImage,
           } = fileChunkDataList[fileIndex];
           const fileEmbeddings = fileEmbeddingsMap.get(fileIndex)!;
 
@@ -795,7 +857,8 @@ export class IndexManager extends WithLogging {
             fileEmbeddings,
             indexedAt,
             pdfPages,
-            audioSegments
+            audioSegments,
+            isImage
           );
 
           batchMetadata.push(...indexData.metadata);
@@ -874,16 +937,18 @@ export class IndexManager extends WithLogging {
         continue;
       }
 
-      const { file, chunks } = fileChunkDataList[fileIndex];
+      const { file, chunks, isImage } = fileChunkDataList[fileIndex];
       allBM25Chunks.push({
         docId: ChunkId.forTitle(file.path),
         content: file.basename,
       });
-      for (let i = 0; i < chunks.length; i++) {
-        allBM25Chunks.push({
-          docId: ChunkId.forContent(file.path, i),
-          content: chunks[i].content,
-        });
+      if (!isImage) {
+        for (let i = 0; i < chunks.length; i++) {
+          allBM25Chunks.push({
+            docId: ChunkId.forContent(file.path, i),
+            content: chunks[i].content,
+          });
+        }
       }
     }
 
@@ -969,7 +1034,8 @@ export class IndexManager extends WithLogging {
     }>,
     indexedAt: number,
     pdfPages?: PdfPage[],
-    audioSegments?: AudioSegment[]
+    audioSegments?: AudioSegment[],
+    isImage?: boolean
   ): {
     metadata: ChunkMetadata[];
     embeddingData: Array<{ id: string; embedding: number[] }>;
@@ -979,8 +1045,38 @@ export class IndexManager extends WithLogging {
       throw new Error(`Title embedding not found for ${file.path}`);
     }
 
+    if (isImage) {
+      const imageEmb = embeddings.find(
+        e => e.type === 'chunk' && e.chunkIndex === 0
+      )?.embedding;
+      return {
+        metadata: [
+          {
+            id: ChunkId.forContent(file.path, 0),
+            filePath: file.path,
+            title: file.basename,
+            content: `[image] ${file.basename}`,
+            headings: [],
+            mtime: file.stat.mtime,
+            size: file.stat.size,
+            indexedAt,
+          },
+        ],
+        embeddingData: [
+          { id: ChunkId.forTitle(file.path), embedding: titleEmbedding },
+          ...(imageEmb
+            ? [
+                {
+                  id: ChunkId.forContent(file.path, 0),
+                  embedding: imageEmb,
+                },
+              ]
+            : []),
+        ],
+      };
+    }
+
     if (chunks.length === 0) {
-      // Empty file: index only title
       return {
         metadata: [
           {
@@ -1094,17 +1190,53 @@ export class IndexManager extends WithLogging {
    * Index file core logic (assumes deletion already performed if needed)
    */
   private async indexFileInternalCore(file: TFile): Promise<void> {
-    const content = await this.vault.cachedRead(file);
+    const fileContent = await this.readFileContent(file);
+    const indexedAt = Date.now();
+
+    if (fileContent.isImage) {
+      const titleEmbeddings = await this.embedder.getEmbeddings([
+        file.basename,
+      ]);
+      const embeddingData: Array<{ id: string; embedding: number[] }> = [
+        { id: ChunkId.forTitle(file.path), embedding: titleEmbeddings[0] },
+      ];
+
+      if (this.embedder.getImageEmbedding && fileContent.imageBase64) {
+        const imageEmb = await this.embedder.getImageEmbedding({
+          image: fileContent.imageBase64,
+        });
+        embeddingData.push({
+          id: ChunkId.forContent(file.path, 0),
+          embedding: imageEmb,
+        });
+      }
+
+      await this.metadataStore.addChunks([
+        {
+          id: ChunkId.forContent(file.path, 0),
+          filePath: file.path,
+          title: file.basename,
+          content: `[image] ${file.basename}`,
+          headings: [],
+          mtime: file.stat.mtime,
+          size: file.stat.size,
+          indexedAt,
+        },
+      ]);
+      await this.embeddingStore.addEmbeddings(embeddingData);
+      await this.bm25Store.indexChunkBatch([
+        { docId: ChunkId.forTitle(file.path), content: file.basename },
+      ]);
+      return;
+    }
+
     const chunks = await createChunks(
-      content,
+      fileContent.text,
       this.configManager.get('maxChunkSize'),
       this.configManager.get('chunkOverlap'),
       this.embedder
     );
 
-    const indexedAt = Date.now();
-
-    // Treat empty files as having a single empty chunk
     const chunkContents =
       chunks.length === 0 ? [''] : chunks.map(c => c.content);
 

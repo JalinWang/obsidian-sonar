@@ -24,7 +24,7 @@ import {
   type ChatStreamUsage,
   type ChatStreamWithToolsResult,
   type ChatTemplateCaps,
-} from './llamaCppUtils';
+} from './llamacpp/llamaCppUtils';
 
 export type {
   ChatMessage,

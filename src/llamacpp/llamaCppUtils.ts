@@ -3,8 +3,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { ChildProcess, spawn } from 'child_process';
 import { createServer } from 'net';
-import type { Logger } from './WithLogging';
-import { progressiveWait } from './utils';
+import type { Logger } from '../WithLogging';
+import { progressiveWait } from '../utils';
 
 /**
  * Get the cache directory path for llama.cpp models

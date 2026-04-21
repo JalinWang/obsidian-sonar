@@ -1,4 +1,4 @@
-import type { LlamaCppEmbedder } from './LlamaCppEmbedder';
+import type { Embedder } from './Embedder';
 
 export interface QueryOptions {
   title?: string;
@@ -7,7 +7,7 @@ export interface QueryOptions {
   hasSelection: boolean;
   selectedText?: string;
   maxTokens: number;
-  embedder: LlamaCppEmbedder;
+  embedder: Embedder;
 }
 
 export async function processQuery(
@@ -73,7 +73,7 @@ async function extractTokenBasedContent(
   lineStart: number,
   lineEnd: number,
   remainingTokens: number,
-  embedder: LlamaCppEmbedder
+  embedder: Embedder
 ): Promise<string> {
   const lines = content.split('\n');
   let result: string[] = [];
@@ -112,7 +112,7 @@ async function extractAroundCenter(
   content: string,
   centerLine: number,
   remainingTokens: number,
-  embedder: LlamaCppEmbedder
+  embedder: Embedder
 ): Promise<string> {
   const lines = content.split('\n');
   let result: string[] = [];
@@ -166,7 +166,7 @@ async function extractAroundCenter(
 async function truncateToTokens(
   text: string,
   maxTokens: number,
-  embedder: LlamaCppEmbedder
+  embedder: Embedder
 ): Promise<string> {
   const words = text.split(/\s+/);
   let result: string[] = [];
@@ -214,7 +214,7 @@ export async function truncateTextToTokens(
 async function truncateToTokensByChars(
   text: string,
   maxTokens: number,
-  embedder: LlamaCppEmbedder
+  embedder: Embedder
 ): Promise<string> {
   return truncateTextToTokens(text, maxTokens, embedder);
 }

@@ -13,8 +13,8 @@ import { join, isAbsolute } from 'path';
 import { createInterface } from 'readline';
 import { WithLogging } from '../../src/WithLogging';
 import type { ConfigManager } from '../../src/ConfigManager';
-import type { LlamaCppEmbedder } from '../../src/LlamaCppEmbedder';
-import type { LlamaCppReranker } from '../../src/LlamaCppReranker';
+import type { Embedder } from '../../src/Embedder';
+import type { Reranker } from '../../src/Reranker';
 import type { LlamaCppChat, ChatMessageExtended } from '../../src/LlamaCppChat';
 import {
   MetadataStore,
@@ -128,8 +128,8 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
 
   constructor(
     protected configManager: ConfigManager,
-    private embedder: LlamaCppEmbedder,
-    private reranker: LlamaCppReranker,
+    private embedder: Embedder,
+    private reranker: Reranker,
     private chatModel: LlamaCppChat,
     private vaultBasePath: string
   ) {

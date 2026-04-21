@@ -14,7 +14,15 @@ export type AggregationMethod =
   | 'rrf_per_doc'
   | 'weighted_top_l_sum';
 
+export type EmbeddingBackend = 'llamacpp' | 'dashscope';
+export type RerankBackend = 'llamacpp' | 'dashscope';
+
 export interface SonarSettings {
+  // Backend selection
+  // =================
+  embeddingBackend: EmbeddingBackend;
+  rerankBackend: RerankBackend;
+
   // Index configuration
   // ===================
   indexPath: string; // Path to index (empty = entire vault)
@@ -50,6 +58,14 @@ export interface SonarSettings {
   llamaRerankerModelFile: string; // GGUF filename for reranker (e.g., 'bge-reranker-v2-m3-Q8_0.gguf')
   llamaChatModelRepo: string; // HuggingFace repository for chat model (e.g., 'unsloth/Qwen3.5-9B-GGUF')
   llamaChatModelFile: string; // GGUF filename for chat model (e.g., 'Qwen3.5-9B-Q8_0.gguf')
+
+  // DashScope configuration
+  // =======================
+  dashscopeApiKey: string;
+  dashscopeBaseUrl: string;
+  dashscopeEmbeddingModel: string;
+  dashscopeEmbeddingDimension: number;
+  dashscopeRerankModel: string;
 
   // Chat generation parameters
   // ==========================
@@ -130,6 +146,11 @@ export interface SonarSettings {
 }
 
 export const DEFAULT_SETTINGS: SonarSettings = {
+  // Backend selection
+  // =================
+  embeddingBackend: 'llamacpp',
+  rerankBackend: 'llamacpp',
+
   // Index configuration
   // ===================
   indexPath: '',
@@ -165,6 +186,14 @@ export const DEFAULT_SETTINGS: SonarSettings = {
   llamaRerankerModelFile: 'bge-reranker-v2-m3-Q8_0.gguf',
   llamaChatModelRepo: 'unsloth/Qwen3.5-9B-GGUF',
   llamaChatModelFile: 'Qwen3.5-9B-Q8_0.gguf',
+
+  // DashScope configuration
+  // =======================
+  dashscopeApiKey: '',
+  dashscopeBaseUrl: 'https://dashscope-intl.aliyuncs.com/api/v1',
+  dashscopeEmbeddingModel: 'multimodal-embedding-one-peace-v1',
+  dashscopeEmbeddingDimension: 1024,
+  dashscopeRerankModel: 'gte-rerank-v2',
 
   // Chat generation parameters
   // ==========================

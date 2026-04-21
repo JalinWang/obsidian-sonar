@@ -9,7 +9,12 @@ import {
 import { ConfigManager } from '../ConfigManager';
 import type SonarPlugin from '../../main';
 import { getIndexableFilesCount } from 'src/fileFilters';
-import type { AggregationMethod, LogLevel } from '../config';
+import type {
+  AggregationMethod,
+  EmbeddingBackend,
+  LogLevel,
+  RerankBackend,
+} from '../config';
 import { FileSuggestInput, FolderSuggestInput } from '../obsidian-utils';
 
 export class SettingTab extends PluginSettingTab {
@@ -32,7 +37,9 @@ export class SettingTab extends PluginSettingTab {
 
     this.createActionsSection(containerEl);
     this.createStatisticsSection(containerEl);
+    this.createBackendSelectionSection(containerEl);
     this.createLlamaCppConfigSection(containerEl);
+    this.createDashScopeConfigSection(containerEl);
     this.createIndexConfigSection(containerEl);
     this.createAudioConfigSection(containerEl);
     this.createUiPreferencesSection(containerEl);
@@ -237,7 +244,6 @@ export class SettingTab extends PluginSettingTab {
     const statsDetails = containerEl.createEl('details', {
       cls: 'sonar-settings-section',
     });
-    statsDetails.setAttr('open', '');
     statsDetails.createEl('summary', { text: 'Statistics' });
     const statsContainer = statsDetails.createDiv();
     const statsDiv = statsContainer.createDiv({
@@ -270,7 +276,6 @@ export class SettingTab extends PluginSettingTab {
     const indexConfigDetails = containerEl.createEl('details', {
       cls: 'sonar-settings-section',
     });
-    indexConfigDetails.setAttr('open', '');
     indexConfigDetails.createEl('summary', { text: 'Index configuration' });
     const indexConfigContainer = indexConfigDetails.createDiv();
 
@@ -523,7 +528,6 @@ This is the final number after chunk aggregation:
     const llamacppDetails = containerEl.createEl('details', {
       cls: 'sonar-settings-section',
     });
-    llamacppDetails.setAttr('open', '');
     llamacppDetails.createEl('summary', {
       text: 'llama.cpp configuration',
     });
@@ -651,6 +655,141 @@ This is the final number after chunk aggregation:
         .onChange(
           async value =>
             await this.configManager.set('llamaChatModelFile', value)
+        )
+    );
+  }
+
+  private createBackendSelectionSection(containerEl: HTMLElement): void {
+    const backendDetails = containerEl.createEl('details', {
+      cls: 'sonar-settings-section',
+    });
+    backendDetails.createEl('summary', { text: 'Backend selection' });
+    const backendContainer = backendDetails.createDiv();
+
+    const embeddingBackendSetting = new Setting(backendContainer).setName(
+      'Embedding backend'
+    );
+    this.renderMarkdownDesc(
+      embeddingBackendSetting.descEl,
+      'Choose the backend for text embedding. Changing this requires reinitialization.'
+    );
+    embeddingBackendSetting.addDropdown(dropdown =>
+      dropdown
+        .addOption('llamacpp', 'llama.cpp (local)')
+        .addOption('dashscope', 'DashScope (cloud)')
+        .setValue(this.configManager.get('embeddingBackend'))
+        .onChange(async value => {
+          await this.configManager.set(
+            'embeddingBackend',
+            value as EmbeddingBackend
+          );
+        })
+    );
+
+    const rerankBackendSetting = new Setting(backendContainer).setName(
+      'Rerank backend'
+    );
+    this.renderMarkdownDesc(
+      rerankBackendSetting.descEl,
+      'Choose the backend for reranking. Changing this requires reinitialization.'
+    );
+    rerankBackendSetting.addDropdown(dropdown =>
+      dropdown
+        .addOption('llamacpp', 'llama.cpp (local)')
+        .addOption('dashscope', 'DashScope (cloud)')
+        .setValue(this.configManager.get('rerankBackend'))
+        .onChange(async value => {
+          await this.configManager.set('rerankBackend', value as RerankBackend);
+        })
+    );
+  }
+
+  private createDashScopeConfigSection(containerEl: HTMLElement): void {
+    const dsDetails = containerEl.createEl('details', {
+      cls: 'sonar-settings-section',
+    });
+    dsDetails.createEl('summary', { text: 'DashScope configuration' });
+    const dsContainer = dsDetails.createDiv();
+
+    const apiKeySetting = new Setting(dsContainer).setName('API key');
+    this.renderMarkdownDesc(
+      apiKeySetting.descEl,
+      'DashScope API key. Get one from the [Alibaba Cloud console](https://dashscope.console.aliyun.com/).'
+    );
+    apiKeySetting.addText(text => {
+      text
+        .setPlaceholder('sk-...')
+        .setValue(this.configManager.get('dashscopeApiKey'))
+        .onChange(
+          async value => await this.configManager.set('dashscopeApiKey', value)
+        );
+      text.inputEl.type = 'password';
+    });
+
+    const baseUrlSetting = new Setting(dsContainer).setName('Base URL');
+    this.renderMarkdownDesc(
+      baseUrlSetting.descEl,
+      'DashScope API base URL (default: international endpoint `https://dashscope-intl.aliyuncs.com/api/v1`). Use `https://dashscope.aliyuncs.com/api/v1` for China (Beijing) region.'
+    );
+    baseUrlSetting.addText(text =>
+      text
+        .setPlaceholder('https://dashscope-intl.aliyuncs.com/api/v1')
+        .setValue(this.configManager.get('dashscopeBaseUrl'))
+        .onChange(
+          async value => await this.configManager.set('dashscopeBaseUrl', value)
+        )
+    );
+
+    dsContainer.createEl('h4', { text: 'Embedding' });
+
+    const embModelSetting = new Setting(dsContainer).setName('Embedding model');
+    this.renderMarkdownDesc(
+      embModelSetting.descEl,
+      'Multimodal embedding model for text and images (e.g., `multimodal-embedding-one-peace-v1`, `multimodal-embedding-v1`).'
+    );
+    embModelSetting.addText(text =>
+      text
+        .setPlaceholder('multimodal-embedding-one-peace-v1')
+        .setValue(this.configManager.get('dashscopeEmbeddingModel'))
+        .onChange(
+          async value =>
+            await this.configManager.set('dashscopeEmbeddingModel', value)
+        )
+    );
+
+    const embDimSetting = new Setting(dsContainer).setName(
+      'Embedding dimension'
+    );
+    this.renderMarkdownDesc(
+      embDimSetting.descEl,
+      'Dimension of embedding vectors (e.g., `1024`, `768`, `512`).'
+    );
+    embDimSetting.addText(text =>
+      text
+        .setPlaceholder('1024')
+        .setValue(String(this.configManager.get('dashscopeEmbeddingDimension')))
+        .onChange(async value => {
+          const parsed = parseInt(value, 10);
+          if (!isNaN(parsed) && parsed > 0) {
+            await this.configManager.set('dashscopeEmbeddingDimension', parsed);
+          }
+        })
+    );
+
+    dsContainer.createEl('h4', { text: 'Rerank' });
+
+    const rerankModelSetting = new Setting(dsContainer).setName('Rerank model');
+    this.renderMarkdownDesc(
+      rerankModelSetting.descEl,
+      'Model name for reranking (e.g., `gte-rerank-v2`, `qwen3-rerank`).'
+    );
+    rerankModelSetting.addText(text =>
+      text
+        .setPlaceholder('gte-rerank-v2')
+        .setValue(this.configManager.get('dashscopeRerankModel'))
+        .onChange(
+          async value =>
+            await this.configManager.set('dashscopeRerankModel', value)
         )
     );
   }
@@ -1148,7 +1287,6 @@ Larger values increase recall but may add noise; smaller values focus on high-qu
     const audioDetails = containerEl.createEl('details', {
       cls: 'sonar-settings-section',
     });
-    audioDetails.setAttr('open', '');
     audioDetails.createEl('summary', {
       text: 'Audio transcription configuration',
     });

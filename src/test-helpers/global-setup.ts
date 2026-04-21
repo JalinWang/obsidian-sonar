@@ -1,4 +1,4 @@
-import { isModelCached, downloadModel } from '../llamaCppUtils';
+import { isModelCached, downloadModel } from '../llamacpp/llamaCppUtils';
 import { DEFAULT_SETTINGS } from '../config';
 
 /**

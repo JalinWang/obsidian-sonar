@@ -1,4 +1,4 @@
-import { LlamaCppEmbedder } from '../LlamaCppEmbedder';
+import { LlamaCppEmbedder } from '../llamacpp/LlamaCppEmbedder';
 import { DEFAULT_SETTINGS } from '../config';
 import { createMockConfigManager } from './mock-config-manager';
 

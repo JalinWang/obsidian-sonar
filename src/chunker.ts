@@ -1,4 +1,4 @@
-import type { LlamaCppEmbedder } from './LlamaCppEmbedder';
+import type { Embedder } from './Embedder';
 
 export interface Chunk {
   content: string;
@@ -16,7 +16,7 @@ const BATCH_SIZE = 10;
  * Cache is local to the function scope and automatically cleaned up after chunking completes.
  */
 function createMemoizedCountTokens(
-  embedder: Pick<LlamaCppEmbedder, 'countTokens'>
+  embedder: Pick<Embedder, 'countTokens'>
 ): CountTokensFn {
   const cache = new Map<string, number>();
   return async (text: string): Promise<number> => {
@@ -49,7 +49,7 @@ export async function createChunks(
   content: string,
   maxChunkSize: number,
   chunkOverlap: number,
-  embedder: Pick<LlamaCppEmbedder, 'countTokens'>
+  embedder: Pick<Embedder, 'countTokens'>
 ): Promise<Chunk[]> {
   const countTokens = createMemoizedCountTokens(embedder);
 

@@ -17,8 +17,12 @@ import { ConfigManager } from './src/ConfigManager';
 import { SettingTab } from './src/ui/SettingTab';
 import { getDBName, MetadataStore } from './src/MetadataStore';
 import { EmbeddingStore } from './src/EmbeddingStore';
-import { LlamaCppEmbedder } from './src/LlamaCppEmbedder';
-import { LlamaCppReranker } from './src/LlamaCppReranker';
+import type { Embedder } from './src/Embedder';
+import type { Reranker } from './src/Reranker';
+import { LlamaCppEmbedder } from './src/llamacpp/LlamaCppEmbedder';
+import { LlamaCppReranker } from './src/llamacpp/LlamaCppReranker';
+import { DashScopeEmbedder } from './src/dashscope/DashScopeEmbedder';
+import { DashScopeReranker } from './src/dashscope/DashScopeReranker';
 import { CHAT_VIEW_TYPE, ChatView } from './src/ui/ChatView';
 import { isAudioExtension } from './src/audio';
 import { confirmAction } from './src/obsidian-utils';
@@ -35,8 +39,8 @@ export default class SonarPlugin extends Plugin {
   searchManager: SearchManager | null = null;
   indexManager: IndexManager | null = null;
   metadataStore: MetadataStore | null = null;
-  embedder: LlamaCppEmbedder | null = null;
-  reranker: LlamaCppReranker | null = null;
+  embedder: Embedder | null = null;
+  reranker: Reranker | null = null;
   private semanticNoteFinder: SemanticNoteFinder | null = null;
   private reinitializing = false;
   private indexUpdateUnsubscribe: (() => void) | null = null;
@@ -103,7 +107,7 @@ export default class SonarPlugin extends Plugin {
   }
 
   private async initializeEmbedder(
-    embedder: LlamaCppEmbedder,
+    embedder: Embedder,
     backendName: string,
     modelDescription: string
   ): Promise<boolean> {
@@ -125,7 +129,7 @@ export default class SonarPlugin extends Plugin {
   }
 
   private async initializeReranker(
-    reranker: LlamaCppReranker,
+    reranker: Reranker,
     modelDescription: string
   ): Promise<boolean> {
     try {
@@ -300,44 +304,99 @@ export default class SonarPlugin extends Plugin {
   }
 
   private async initializeAsync(): Promise<boolean> {
-    const serverPath = this.configManager.get('llamacppServerPath');
+    const embeddingBackend = this.configManager.get('embeddingBackend');
+    const rerankBackend = this.configManager.get('rerankBackend');
 
-    const embedderModelRepo =
-      this.configManager.get('llamaEmbedderModelRepo') ||
-      DEFAULT_SETTINGS.llamaEmbedderModelRepo;
-    const embedderModelFile =
-      this.configManager.get('llamaEmbedderModelFile') ||
-      DEFAULT_SETTINGS.llamaEmbedderModelFile;
-    const embedderModelIdentifier = `${embedderModelRepo}/${embedderModelFile}`;
-    const embedder = (this.embedder = new LlamaCppEmbedder(
-      serverPath,
-      embedderModelRepo,
-      embedderModelFile,
-      this.configManager,
-      status => sonarState.setEmbedderStatus(status),
-      (msg, duration) => new Notice(msg, duration),
-      this.createConfirmDownload('embedder')
-    ));
+    let embedder: Embedder;
+    let embedderModelIdentifier: string;
 
-    const rerankerModelRepo =
-      this.configManager.get('llamaRerankerModelRepo') ||
-      DEFAULT_SETTINGS.llamaRerankerModelRepo;
-    const rerankerModelFile =
-      this.configManager.get('llamaRerankerModelFile') ||
-      DEFAULT_SETTINGS.llamaRerankerModelFile;
-    const rerankerModelIdentifier = `${rerankerModelRepo}/${rerankerModelFile}`;
-    const reranker = (this.reranker = new LlamaCppReranker(
-      serverPath,
-      rerankerModelRepo,
-      rerankerModelFile,
-      this.configManager,
-      status => sonarState.setRerankerStatus(status),
-      (msg, duration) => new Notice(msg, duration),
-      this.createConfirmDownload('reranker')
-    ));
+    if (embeddingBackend === 'dashscope') {
+      const apiKey = this.configManager.get('dashscopeApiKey');
+      const baseUrl =
+        this.configManager.get('dashscopeBaseUrl') ||
+        DEFAULT_SETTINGS.dashscopeBaseUrl;
+      const model =
+        this.configManager.get('dashscopeEmbeddingModel') ||
+        DEFAULT_SETTINGS.dashscopeEmbeddingModel;
+      const dimension =
+        this.configManager.get('dashscopeEmbeddingDimension') ||
+        DEFAULT_SETTINGS.dashscopeEmbeddingDimension;
+      embedderModelIdentifier = `dashscope/${model}/${dimension}`;
+      embedder = new DashScopeEmbedder(
+        apiKey,
+        baseUrl,
+        model,
+        dimension,
+        this.configManager,
+        status => sonarState.setEmbedderStatus(status)
+      );
+    } else {
+      const serverPath = this.configManager.get('llamacppServerPath');
+      const embedderModelRepo =
+        this.configManager.get('llamaEmbedderModelRepo') ||
+        DEFAULT_SETTINGS.llamaEmbedderModelRepo;
+      const embedderModelFile =
+        this.configManager.get('llamaEmbedderModelFile') ||
+        DEFAULT_SETTINGS.llamaEmbedderModelFile;
+      embedderModelIdentifier = `${embedderModelRepo}/${embedderModelFile}`;
+      embedder = new LlamaCppEmbedder(
+        serverPath,
+        embedderModelRepo,
+        embedderModelFile,
+        this.configManager,
+        status => sonarState.setEmbedderStatus(status),
+        (msg, duration) => new Notice(msg, duration),
+        this.createConfirmDownload('embedder')
+      );
+    }
+    this.embedder = embedder;
+
+    let reranker: Reranker;
+    let rerankerModelIdentifier: string;
+
+    if (rerankBackend === 'dashscope') {
+      const apiKey = this.configManager.get('dashscopeApiKey');
+      const baseUrl =
+        this.configManager.get('dashscopeBaseUrl') ||
+        DEFAULT_SETTINGS.dashscopeBaseUrl;
+      const model =
+        this.configManager.get('dashscopeRerankModel') ||
+        DEFAULT_SETTINGS.dashscopeRerankModel;
+      rerankerModelIdentifier = `dashscope/${model}`;
+      reranker = new DashScopeReranker(
+        apiKey,
+        baseUrl,
+        model,
+        this.configManager,
+        status => sonarState.setRerankerStatus(status)
+      );
+    } else {
+      const serverPath = this.configManager.get('llamacppServerPath');
+      const rerankerModelRepo =
+        this.configManager.get('llamaRerankerModelRepo') ||
+        DEFAULT_SETTINGS.llamaRerankerModelRepo;
+      const rerankerModelFile =
+        this.configManager.get('llamaRerankerModelFile') ||
+        DEFAULT_SETTINGS.llamaRerankerModelFile;
+      rerankerModelIdentifier = `${rerankerModelRepo}/${rerankerModelFile}`;
+      reranker = new LlamaCppReranker(
+        serverPath,
+        rerankerModelRepo,
+        rerankerModelFile,
+        this.configManager,
+        status => sonarState.setRerankerStatus(status),
+        (msg, duration) => new Notice(msg, duration),
+        this.createConfirmDownload('reranker')
+      );
+    }
+    this.reranker = reranker;
 
     const [embedderInitialized] = await Promise.all([
-      this.initializeEmbedder(embedder, 'llama.cpp', embedderModelIdentifier),
+      this.initializeEmbedder(
+        embedder,
+        embeddingBackend,
+        embedderModelIdentifier
+      ),
       this.initializeReranker(reranker, rerankerModelIdentifier),
     ]);
     if (!embedderInitialized) return false;

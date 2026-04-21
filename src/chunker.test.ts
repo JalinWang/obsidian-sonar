@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createChunks } from './chunker';
-import type { LlamaCppEmbedder } from './LlamaCppEmbedder';
+import type { LlamaCppEmbedder } from './llamacpp/LlamaCppEmbedder';
 import {
   setupTestEmbedder,
   cleanupTestEmbedder,

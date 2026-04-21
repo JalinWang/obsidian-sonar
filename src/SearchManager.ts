@@ -9,7 +9,7 @@ import {
   aggregateChunksToFiles,
   mergeAndDeduplicateChunks,
 } from './SearchResultFusion';
-import type { LlamaCppReranker } from './LlamaCppReranker';
+import type { Reranker } from './Reranker';
 import { truncateTextToTokens } from './QueryProcessor';
 
 /**
@@ -169,7 +169,7 @@ export class SearchManager extends WithLogging {
   constructor(
     private embeddingSearch: EmbeddingSearch,
     private bm25Search: BM25Search,
-    private reranker: LlamaCppReranker,
+    private reranker: Reranker,
     protected configManager: ConfigManager
   ) {
     super();

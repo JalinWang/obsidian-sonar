@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'child_process';
-import type { ConfigManager } from './ConfigManager';
-import { WithLogging } from './WithLogging';
+import type { ConfigManager } from '../ConfigManager';
+import type { Reranker, RerankResult } from '../Reranker';
+import { WithLogging } from '../WithLogging';
 import {
   isModelCached,
   downloadModel,
@@ -12,18 +13,15 @@ import {
   llamaServerTokenize,
   llamaServerGetContextSize,
 } from './llamaCppUtils';
-import type { ModelStatus } from './SonarState';
+import type { ModelStatus } from '../SonarState';
 
-export interface RerankResult {
-  index: number;
-  relevanceScore: number;
-}
+export type { RerankResult } from '../Reranker';
 
 /**
  * Cross-encoder reranking using llama.cpp server
  * Manages a separate llama.cpp server process for reranking
  */
-export class LlamaCppReranker extends WithLogging {
+export class LlamaCppReranker extends WithLogging implements Reranker {
   protected readonly componentName = 'LlamaCppReranker';
 
   private serverProcess: ChildProcess | null = null;
