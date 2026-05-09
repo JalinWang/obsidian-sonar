@@ -160,9 +160,9 @@ export const DEFAULT_SETTINGS: SonarSettings = {
 
   // UI preferences
   // ==============
-  autoOpenRelatedNotes: false,
-  showRelatedNotesQuery: false,
-  showRelatedNotesExcerpts: false,
+  autoOpenRelatedNotes: true,
+  showRelatedNotesQuery: true,
+  showRelatedNotesExcerpts: true,
   showKnowledgeGraph: false,
   enableRelatedNotesReranking: false,
   includeTitleInQuery: true,
