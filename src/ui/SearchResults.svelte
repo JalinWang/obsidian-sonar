@@ -5,6 +5,8 @@
   import { onDestroy, untrack } from 'svelte';
   import type { ConfigManager } from '../ConfigManager';
 
+  const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+
   interface Props {
     app: App;
     results: SearchResult[];
@@ -50,6 +52,19 @@
         markdownManager.cleanupElement(node);
       },
     };
+  }
+
+  function isImage(filePath: string): boolean {
+    const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+    return IMAGE_EXTENSIONS.includes(ext);
+  }
+
+  function getImageResourceUrl(filePath: string): string {
+    const file = app.vault.getAbstractFileByPath(filePath);
+    if (file instanceof TFile) {
+      return app.vault.getResourcePath(file);
+    }
+    return '';
   }
 
   function isPdf(filePath: string): boolean {
@@ -170,12 +185,23 @@
           {/if}
 
           {#if showExcerpts}
-            <div
-              class="result-excerpt"
-              style:max-height={maxHeight}
-              use:setExcerptElement={index}
-              use:setupInternalLinkHandler
-            ></div>
+            {#if isImage(result.filePath)}
+              <div class="result-image-preview">
+                <img
+                  src={getImageResourceUrl(result.filePath)}
+                  alt={getDisplayTitle(result)}
+                  loading="lazy"
+                  style:max-height={maxHeight}
+                />
+              </div>
+            {:else}
+              <div
+                class="result-excerpt"
+                style:max-height={maxHeight}
+                use:setExcerptElement={index}
+                use:setupInternalLinkHandler
+              ></div>
+            {/if}
           {/if}
         </div>
       </div>
@@ -308,6 +334,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .result-image-preview {
+    margin-top: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+  }
+
+  .result-image-preview img {
+    display: block;
+    max-width: 100%;
+    object-fit: contain;
+    margin: 0 auto;
   }
 
   .result-excerpt {
