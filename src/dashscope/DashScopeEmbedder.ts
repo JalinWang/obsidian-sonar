@@ -11,15 +11,18 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
 
   private _status: ModelStatus = 'uninitialized';
 
+  private _dimension: number;
+
   constructor(
     private apiKey: string,
     private baseUrl: string,
     private model: string,
-    private dimension: number,
+    dimension: number,
     protected configManager: ConfigManager,
     private onStatusChange: (status: ModelStatus) => void
   ) {
     super();
+    this._dimension = dimension;
   }
 
   get status(): ModelStatus {
@@ -28,6 +31,10 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
 
   get contextSize(): number | null {
     return 8192;
+  }
+
+  get dimension(): number {
+    return this._dimension;
   }
 
   private setStatus(status: ModelStatus): void {
@@ -39,7 +46,7 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
     this.setStatus('initializing');
     try {
       this.log(
-        `Initializing with model: ${this.model} (dimension: ${this.dimension})`
+        `Initializing with model: ${this.model} (dimension: ${this._dimension})`
       );
 
       await dashscopeEmbedding(
@@ -47,7 +54,7 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
         this.apiKey,
         this.model,
         [{ text: 'test' }],
-        this.dimension
+        this._dimension
       );
 
       this.log('Initialized');
@@ -75,7 +82,7 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
         this.apiKey,
         this.model,
         batch,
-        this.dimension
+        this._dimension
       );
       for (let j = 0; j < batchResult.length; j++) {
         allEmbeddings[i + j] = batchResult[j];
@@ -94,7 +101,7 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
       this.apiKey,
       this.model,
       [input],
-      this.dimension
+      this._dimension
     );
     return results[0];
   }

@@ -13,13 +13,12 @@ import {
   getDBName,
   DB_VERSION,
   STORE_METADATA,
-  STORE_EMBEDDINGS,
   STORE_BM25_INVERTED_INDEX,
   STORE_BM25_DOC_TOKENS,
   STORE_FAILED_FILES,
   INDEX_FILE_PATH,
 } from '../../src/MetadataStore';
-import { EmbeddingStore } from '../../src/EmbeddingStore';
+import { ZvecEmbeddingStore } from '../../src/ZvecEmbeddingStore';
 import { BM25Store } from '../../src/BM25Store';
 import { EmbeddingSearch } from '../../src/EmbeddingSearch';
 import { BM25Search } from '../../src/BM25Search';
@@ -104,7 +103,7 @@ interface TempStores {
   dbName: string;
   db: IDBDatabase;
   metadataStore: MetadataStore;
-  embeddingStore: EmbeddingStore;
+  embeddingStore: ZvecEmbeddingStore;
   bm25Store: BM25Store;
   embeddingSearch: EmbeddingSearch;
   bm25Search: BM25Search;
@@ -315,11 +314,18 @@ export class CragBenchmarkRunner extends WithLogging {
    */
   private async createTempStores(questionId: string): Promise<TempStores> {
     const dbName = getDBName(`crag-${questionId}`, 'benchmark');
+    const sanitize = (str: string): string =>
+      str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
+    const zvecPath = `${this.vaultBasePath}/.obsidian/plugins/obsidian-sonar/zvec-bench/${sanitize(dbName)}`;
 
     const db = await this.openTempDatabase(dbName);
 
     const metadataStore = await this.createMetadataStore(db);
-    const embeddingStore = new EmbeddingStore(db, this.configManager);
+    const embeddingStore = await ZvecEmbeddingStore.initialize(
+      zvecPath,
+      this.embedder.dimension,
+      this.configManager
+    );
     const bm25Store = await BM25Store.initialize(db, this.configManager);
 
     const embeddingSearch = new EmbeddingSearch(
@@ -370,10 +376,6 @@ export class CragBenchmarkRunner extends WithLogging {
         if (!db.objectStoreNames.contains(STORE_METADATA)) {
           const store = db.createObjectStore(STORE_METADATA, { keyPath: 'id' });
           store.createIndex(INDEX_FILE_PATH, 'filePath', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains(STORE_EMBEDDINGS)) {
-          db.createObjectStore(STORE_EMBEDDINGS, { keyPath: 'id' });
         }
 
         if (!db.objectStoreNames.contains(STORE_BM25_INVERTED_INDEX)) {
@@ -482,7 +484,7 @@ export class CragBenchmarkRunner extends WithLogging {
         chunk_count: chunkCount,
       };
     } finally {
-      // Cleanup: delete temporary IndexedDB
+      stores.embeddingStore.destroy();
       await this.deleteTempDatabase(stores.db, stores.dbName);
     }
   }
@@ -499,7 +501,12 @@ export class CragBenchmarkRunner extends WithLogging {
     const batchSize = this.configManager.get('indexingBatchSize');
 
     const allMetadata: ChunkMetadata[] = [];
-    const allEmbeddings: { id: string; embedding: number[] }[] = [];
+    const allEmbeddings: {
+      id: string;
+      embedding: number[];
+      filePath: string;
+      chunkType: 'title' | 'content';
+    }[] = [];
     const allBm25Chunks: { docId: string; content: string }[] = [];
 
     const now = Date.now();
@@ -568,6 +575,8 @@ export class CragBenchmarkRunner extends WithLogging {
         allEmbeddings.push({
           id: batch[j].id,
           embedding: embeddings[j],
+          filePath: batch[j].filePath,
+          chunkType: ChunkId.isTitle(batch[j].id) ? 'title' : 'content',
         });
       }
     }

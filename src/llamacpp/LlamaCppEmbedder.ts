@@ -31,6 +31,7 @@ export class LlamaCppEmbedder extends WithLogging implements Embedder {
   private exitHandlerBound: (() => void) | null = null;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private _contextSize: number | null = null;
+  private _dimension: number = 0;
 
   constructor(
     private serverPath: string,
@@ -50,6 +51,10 @@ export class LlamaCppEmbedder extends WithLogging implements Embedder {
 
   get contextSize(): number | null {
     return this._contextSize;
+  }
+
+  get dimension(): number {
+    return this._dimension;
   }
 
   private setStatus(status: ModelStatus): void {
@@ -77,6 +82,9 @@ export class LlamaCppEmbedder extends WithLogging implements Embedder {
             } else {
               this.warn('Failed to detect context size from /props');
             }
+            const probe = await llamaServerGetEmbeddings(this.serverUrl, ['']);
+            this._dimension = probe[0].length;
+            this.log(`Detected embedding dimension: ${this._dimension}`);
             this.log(`Initialized on port ${this.port}`);
             this.setStatus('ready');
             this.updateStatusBar('Ready');

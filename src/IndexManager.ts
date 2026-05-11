@@ -16,7 +16,7 @@ import {
   isImageExtension,
 } from './fileFilters';
 import { type ChunkMetadata, MetadataStore } from './MetadataStore';
-import { EmbeddingStore } from './EmbeddingStore';
+import { ZvecEmbeddingStore } from './ZvecEmbeddingStore';
 import { createChunks, type Chunk } from './chunker';
 import type { Embedder } from './Embedder';
 import { BM25Store } from './BM25Store';
@@ -98,7 +98,7 @@ export class IndexManager extends WithLogging {
 
   constructor(
     private metadataStore: MetadataStore,
-    private embeddingStore: EmbeddingStore,
+    private embeddingStore: ZvecEmbeddingStore,
     private bm25Store: BM25Store,
     private embedder: Embedder,
     private vault: Vault,
@@ -836,8 +836,12 @@ export class IndexManager extends WithLogging {
 
       if (completedFileIndices.length > 0) {
         const batchMetadata: ChunkMetadata[] = [];
-        const batchEmbeddingData: Array<{ id: string; embedding: number[] }> =
-          [];
+        const batchEmbeddingData: Array<{
+          id: string;
+          embedding: number[];
+          filePath: string;
+          chunkType: 'title' | 'content';
+        }> = [];
 
         for (const fileIndex of completedFileIndices) {
           const {
@@ -963,6 +967,10 @@ export class IndexManager extends WithLogging {
       this.log(`Indexed ${allBM25Chunks.length} BM25 chunks`);
     }
 
+    if (indexOperations.length > 0) {
+      await this.embeddingStore.optimize();
+    }
+
     if (fileEmbeddingsMap.size > 0) {
       const remainingFiles = Array.from(fileEmbeddingsMap.keys())
         .map(idx => fileChunkDataList[idx].file.path)
@@ -1038,7 +1046,12 @@ export class IndexManager extends WithLogging {
     isImage?: boolean
   ): {
     metadata: ChunkMetadata[];
-    embeddingData: Array<{ id: string; embedding: number[] }>;
+    embeddingData: Array<{
+      id: string;
+      embedding: number[];
+      filePath: string;
+      chunkType: 'title' | 'content';
+    }>;
   } {
     const titleEmbedding = embeddings.find(e => e.type === 'title')?.embedding;
     if (!titleEmbedding) {
@@ -1063,12 +1076,19 @@ export class IndexManager extends WithLogging {
           },
         ],
         embeddingData: [
-          { id: ChunkId.forTitle(file.path), embedding: titleEmbedding },
+          {
+            id: ChunkId.forTitle(file.path),
+            embedding: titleEmbedding,
+            filePath: file.path,
+            chunkType: 'title',
+          },
           ...(imageEmb
             ? [
                 {
                   id: ChunkId.forContent(file.path, 0),
                   embedding: imageEmb,
+                  filePath: file.path,
+                  chunkType: 'content' as const,
                 },
               ]
             : []),
@@ -1092,7 +1112,12 @@ export class IndexManager extends WithLogging {
           },
         ],
         embeddingData: [
-          { id: ChunkId.forTitle(file.path), embedding: titleEmbedding },
+          {
+            id: ChunkId.forTitle(file.path),
+            embedding: titleEmbedding,
+            filePath: file.path,
+            chunkType: 'title',
+          },
         ],
       };
     }
@@ -1100,7 +1125,12 @@ export class IndexManager extends WithLogging {
     // Non-empty file: process chunks
     const chunkContents = chunks.map(c => c.content);
     const metadata: ChunkMetadata[] = [];
-    const embeddingData: Array<{ id: string; embedding: number[] }> = [];
+    const embeddingData: Array<{
+      id: string;
+      embedding: number[];
+      filePath: string;
+      chunkType: 'title' | 'content';
+    }> = [];
 
     // Add metadata for each chunk
     for (let i = 0; i < chunks.length; i++) {
@@ -1135,6 +1165,8 @@ export class IndexManager extends WithLogging {
     embeddingData.push({
       id: ChunkId.forTitle(file.path),
       embedding: titleEmbedding,
+      filePath: file.path,
+      chunkType: 'title',
     });
 
     // Add chunk embeddings
@@ -1143,6 +1175,8 @@ export class IndexManager extends WithLogging {
         embeddingData.push({
           id: ChunkId.forContent(file.path, emb.chunkIndex),
           embedding: emb.embedding,
+          filePath: file.path,
+          chunkType: 'content',
         });
       }
     }
@@ -1197,8 +1231,18 @@ export class IndexManager extends WithLogging {
       const titleEmbeddings = await this.embedder.getEmbeddings([
         file.basename,
       ]);
-      const embeddingData: Array<{ id: string; embedding: number[] }> = [
-        { id: ChunkId.forTitle(file.path), embedding: titleEmbeddings[0] },
+      const embeddingData: Array<{
+        id: string;
+        embedding: number[];
+        filePath: string;
+        chunkType: 'title' | 'content';
+      }> = [
+        {
+          id: ChunkId.forTitle(file.path),
+          embedding: titleEmbeddings[0],
+          filePath: file.path,
+          chunkType: 'title',
+        },
       ];
 
       if (this.embedder.getImageEmbedding && fileContent.imageBase64) {
@@ -1208,6 +1252,8 @@ export class IndexManager extends WithLogging {
         embeddingData.push({
           id: ChunkId.forContent(file.path, 0),
           embedding: imageEmb,
+          filePath: file.path,
+          chunkType: 'content',
         });
       }
 
@@ -1260,8 +1306,18 @@ export class IndexManager extends WithLogging {
     const bm25Chunks = [
       { docId: ChunkId.forTitle(file.path), content: file.basename },
     ];
-    const embeddingData = [
-      { id: ChunkId.forTitle(file.path), embedding: titleEmbeddings[0] },
+    const embeddingData: Array<{
+      id: string;
+      embedding: number[];
+      filePath: string;
+      chunkType: 'title' | 'content';
+    }> = [
+      {
+        id: ChunkId.forTitle(file.path),
+        embedding: titleEmbeddings[0],
+        filePath: file.path,
+        chunkType: 'title',
+      },
     ];
 
     for (let i = 0; i < chunkContents.length; i++) {
@@ -1272,6 +1328,8 @@ export class IndexManager extends WithLogging {
       embeddingData.push({
         id: ChunkId.forContent(file.path, i),
         embedding: contentEmbeddings[i],
+        filePath: file.path,
+        chunkType: 'content',
       });
     }
 

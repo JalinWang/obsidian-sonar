@@ -22,13 +22,12 @@ import {
   getDBName,
   DB_VERSION,
   STORE_METADATA,
-  STORE_EMBEDDINGS,
   STORE_BM25_INVERTED_INDEX,
   STORE_BM25_DOC_TOKENS,
   STORE_FAILED_FILES,
   INDEX_FILE_PATH,
 } from '../../src/MetadataStore';
-import { EmbeddingStore } from '../../src/EmbeddingStore';
+import { ZvecEmbeddingStore } from '../../src/ZvecEmbeddingStore';
 import { BM25Store } from '../../src/BM25Store';
 import { EmbeddingSearch } from '../../src/EmbeddingSearch';
 import { BM25Search } from '../../src/BM25Search';
@@ -114,7 +113,7 @@ interface Stores {
   dbName: string;
   db: IDBDatabase;
   metadataStore: MetadataStore;
-  embeddingStore: EmbeddingStore;
+  embeddingStore: ZvecEmbeddingStore;
   bm25Store: BM25Store;
   embeddingSearch: EmbeddingSearch;
   bm25Search: BM25Search;
@@ -267,6 +266,7 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
 
     // Keep DB for potential reuse - don't delete automatically
     if (this.stores) {
+      this.stores.embeddingStore.close();
       this.stores.db.close();
       this.stores = null;
     }
@@ -531,7 +531,12 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
     }
 
     this.log(`Generating embeddings for ${allMetadata.length} chunks...`);
-    const allEmbeddings: { id: string; embedding: number[] }[] = [];
+    const allEmbeddings: {
+      id: string;
+      embedding: number[];
+      filePath: string;
+      chunkType: 'title' | 'content';
+    }[] = [];
 
     for (let i = 0; i < allMetadata.length; i += batchSize) {
       const batch = allMetadata.slice(i, i + batchSize);
@@ -539,7 +544,12 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
       const embeddings = await this.embedder.getEmbeddings(texts);
 
       for (let j = 0; j < batch.length; j++) {
-        allEmbeddings.push({ id: batch[j].id, embedding: embeddings[j] });
+        allEmbeddings.push({
+          id: batch[j].id,
+          embedding: embeddings[j],
+          filePath: batch[j].filePath,
+          chunkType: ChunkId.isTitle(batch[j].id) ? 'title' : 'content',
+        });
       }
 
       if ((i + batchSize) % (batchSize * 10) === 0) {
@@ -649,10 +659,18 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
 
   private async createStores(dbNamePrefix: string): Promise<Stores> {
     const dbName = getDBName(dbNamePrefix, 'benchmark');
+    const sanitize = (str: string): string =>
+      str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
+    const zvecPath = `${this.vaultBasePath}/.obsidian/plugins/obsidian-sonar/zvec-bench/${sanitize(dbName)}`;
+
     const db = await this.openTempDatabase(dbName);
 
     const metadataStore = await this.createMetadataStore(db);
-    const embeddingStore = new EmbeddingStore(db, this.configManager);
+    const embeddingStore = await ZvecEmbeddingStore.initialize(
+      zvecPath,
+      this.embedder.dimension,
+      this.configManager
+    );
     const bm25Store = await BM25Store.initialize(db, this.configManager);
 
     const embeddingSearch = new EmbeddingSearch(
@@ -742,10 +760,6 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
         if (!db.objectStoreNames.contains(STORE_METADATA)) {
           const store = db.createObjectStore(STORE_METADATA, { keyPath: 'id' });
           store.createIndex(INDEX_FILE_PATH, 'filePath', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains(STORE_EMBEDDINGS)) {
-          db.createObjectStore(STORE_EMBEDDINGS, { keyPath: 'id' });
         }
 
         if (!db.objectStoreNames.contains(STORE_BM25_INVERTED_INDEX)) {

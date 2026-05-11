@@ -16,7 +16,7 @@ import { IndexManager } from './src/IndexManager';
 import { ConfigManager } from './src/ConfigManager';
 import { SettingTab } from './src/ui/SettingTab';
 import { getDBName, MetadataStore } from './src/MetadataStore';
-import { EmbeddingStore } from './src/EmbeddingStore';
+import { ZvecEmbeddingStore } from './src/ZvecEmbeddingStore';
 import type { Embedder } from './src/Embedder';
 import type { Reranker } from './src/Reranker';
 import { LlamaCppEmbedder } from './src/llamacpp/LlamaCppEmbedder';
@@ -41,6 +41,7 @@ export default class SonarPlugin extends Plugin {
   metadataStore: MetadataStore | null = null;
   embedder: Embedder | null = null;
   reranker: Reranker | null = null;
+  private zvecStore: ZvecEmbeddingStore | null = null;
   private semanticNoteFinder: SemanticNoteFinder | null = null;
   private reinitializing = false;
   private indexUpdateUnsubscribe: (() => void) | null = null;
@@ -166,6 +167,12 @@ export default class SonarPlugin extends Plugin {
         this.indexManager = null;
       }
       this.searchManager = null;
+
+      if (this.zvecStore) {
+        this.log('Closing zvec store...');
+        this.zvecStore.close();
+        this.zvecStore = null;
+      }
 
       if (this.embedder) {
         this.log('Cleaning up old embedder...');
@@ -424,7 +431,52 @@ export default class SonarPlugin extends Plugin {
     sonarState.setMetadataStoreStatus('ready');
 
     const db = this.metadataStore.getDB();
-    const embeddingStore = new EmbeddingStore(db, this.configManager);
+
+    const basePath = (
+      this.app.vault.adapter as { getBasePath?: () => string }
+    ).getBasePath?.();
+    if (!basePath) {
+      this.error('Failed to get vault base path for zvec store');
+      new Notice(
+        'Failed to initialize vector store: vault base path unavailable.\n\n' +
+          'Check console for details.',
+        0
+      );
+      return false;
+    }
+
+    const sanitizeForPath = (str: string): string =>
+      str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
+    const zvecCollectionPath = `${basePath}/.obsidian/plugins/obsidian-sonar/zvec/${sanitizeForPath(embedderModelIdentifier)}`;
+
+    sonarState.setStatusBarText('Loading vector store...');
+    let zvecStore: ZvecEmbeddingStore;
+    try {
+      zvecStore = await ZvecEmbeddingStore.initialize(
+        zvecCollectionPath,
+        embedder.dimension,
+        this.configManager
+      );
+    } catch (error) {
+      this.error(`Failed to initialize vector store: ${error}`);
+      new Notice(
+        'Failed to initialize vector store.\n\n' +
+          'Check console for details.\n\n' +
+          'You can change settings and run "Sonar: Reinitialize Sonar" command to retry.',
+        0
+      );
+      return false;
+    }
+    this.zvecStore = zvecStore;
+
+    const migratedCount = await ZvecEmbeddingStore.migrateFromIDB(
+      db,
+      zvecStore
+    );
+    if (migratedCount > 0) {
+      this.log(`Migrated ${migratedCount} embeddings from IndexedDB to zvec`);
+    }
+
     let bm25Store: BM25Store;
     sonarState.setBm25StoreStatus('initializing');
     sonarState.setStatusBarText('Loading BM25 store...');
@@ -451,7 +503,7 @@ export default class SonarPlugin extends Plugin {
 
     const embeddingSearch = new EmbeddingSearch(
       this.metadataStore,
-      embeddingStore,
+      zvecStore,
       this.embedder,
       this.configManager
     );
@@ -465,7 +517,7 @@ export default class SonarPlugin extends Plugin {
 
     this.indexManager = new IndexManager(
       this.metadataStore,
-      embeddingStore,
+      zvecStore,
       bm25Store,
       this.embedder,
       this.app.vault,
@@ -944,6 +996,10 @@ export default class SonarPlugin extends Plugin {
     this.semanticNoteFinder = null;
     if (this.indexManager) {
       this.indexManager.cleanup();
+    }
+    if (this.zvecStore) {
+      this.zvecStore.close();
+      this.zvecStore = null;
     }
     if (this.metadataStore) {
       await this.metadataStore.close();

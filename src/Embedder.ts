@@ -8,6 +8,7 @@ export interface MultimodalInput {
 export interface Embedder {
   readonly status: ModelStatus;
   readonly contextSize: number | null;
+  readonly dimension: number;
   initialize(): Promise<void>;
   cleanup(): Promise<void>;
   getEmbeddings(texts: string[]): Promise<number[][]>;
