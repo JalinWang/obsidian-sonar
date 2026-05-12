@@ -27,6 +27,7 @@ import {
   STORE_FAILED_FILES,
   INDEX_FILE_PATH,
 } from '../../src/MetadataStore';
+import { EmbeddingStore } from '../../src/EmbeddingStore';
 import { ZvecEmbeddingStore } from '../../src/ZvecEmbeddingStore';
 import { BM25Store } from '../../src/BM25Store';
 import { EmbeddingSearch } from '../../src/EmbeddingSearch';
@@ -673,9 +674,11 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
     );
     const bm25Store = await BM25Store.initialize(db, this.configManager);
 
+    const idbEmbeddingStore = new EmbeddingStore(db, this.configManager);
     const embeddingSearch = new EmbeddingSearch(
       metadataStore,
       embeddingStore,
+      idbEmbeddingStore,
       this.embedder,
       this.configManager
     );

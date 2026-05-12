@@ -42,10 +42,11 @@ export function getDBName(vaultName: string, modelIdentifier: string): string {
 
   return `sonar/${sanitizedVault}/llamacpp/${sanitizedModel}`;
 }
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 // Store names
 export const STORE_METADATA = 'metadata';
+export const STORE_EMBEDDINGS = 'embeddings';
 export const STORE_BM25_INVERTED_INDEX = 'bm25-inverted-index';
 export const STORE_BM25_DOC_TOKENS = 'bm25-doc-tokens';
 export const STORE_FAILED_FILES = 'failed-files';
@@ -93,6 +94,11 @@ export class MetadataStore extends WithLogging {
           store.createIndex(INDEX_FILE_PATH, 'filePath', {
             unique: false,
           });
+        }
+
+        // Added back in DB v2: brute-force cosine similarity search fallback.
+        if (!db.objectStoreNames.contains(STORE_EMBEDDINGS)) {
+          db.createObjectStore(STORE_EMBEDDINGS, { keyPath: 'id' });
         }
 
         if (!db.objectStoreNames.contains(STORE_BM25_INVERTED_INDEX)) {

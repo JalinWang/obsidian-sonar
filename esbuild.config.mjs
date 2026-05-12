@@ -81,7 +81,7 @@ const context = await esbuild.context({
       includeBenchmark ? 'true' : 'false'
     ),
   },
-  outfile: 'main.js',
+  outfile: 'dist/main.js',
   minify: prod,
 });
 

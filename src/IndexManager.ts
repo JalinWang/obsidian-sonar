@@ -16,6 +16,7 @@ import {
   isImageExtension,
 } from './fileFilters';
 import { type ChunkMetadata, MetadataStore } from './MetadataStore';
+import { EmbeddingStore } from './EmbeddingStore';
 import { ZvecEmbeddingStore } from './ZvecEmbeddingStore';
 import { createChunks, type Chunk } from './chunker';
 import type { Embedder } from './Embedder';
@@ -98,6 +99,7 @@ export class IndexManager extends WithLogging {
 
   constructor(
     private metadataStore: MetadataStore,
+    private idbEmbeddingStore: EmbeddingStore,
     private embeddingStore: ZvecEmbeddingStore,
     private bm25Store: BM25Store,
     private embedder: Embedder,
@@ -581,6 +583,7 @@ export class IndexManager extends WithLogging {
 
       await Promise.all([
         this.metadataStore.deleteChunks(allChunkIds),
+        this.idbEmbeddingStore.deleteEmbeddings(allChunkIds),
         this.embeddingStore.deleteEmbeddings(allChunkIds),
         this.bm25Store.deleteChunks(allChunkIds),
         this.metadataStore.deleteFailedFiles(filesToDelete),
@@ -895,10 +898,27 @@ export class IndexManager extends WithLogging {
 
         if (batchMetadata.length > 0) {
           const writeStart = Date.now();
+          // Phase 1: write metadata + IDB embeddings atomically (same DB).
           await Promise.all([
             this.metadataStore.addChunks(batchMetadata),
-            this.embeddingStore.addEmbeddings(batchEmbeddingData),
+            this.idbEmbeddingStore.addEmbeddings(batchEmbeddingData),
           ]);
+          // Phase 2: write to zvec. On failure, roll back IDB so the chunks
+          // don't appear as indexed on the next sync.
+          try {
+            await this.embeddingStore.addEmbeddings(batchEmbeddingData);
+          } catch (zvecErr) {
+            const idsToRollback = batchMetadata.map(m => m.id);
+            await Promise.all([
+              this.metadataStore.deleteChunks(idsToRollback),
+              this.idbEmbeddingStore.deleteEmbeddings(idsToRollback),
+            ]).catch(rollbackErr =>
+              this.error(
+                `Failed to roll back IDB after zvec error: ${rollbackErr}`
+              )
+            );
+            throw zvecErr;
+          }
           timings.dbWrite += Date.now() - writeStart;
 
           for (const fileIndex of completedFileIndices) {
@@ -1023,6 +1043,7 @@ export class IndexManager extends WithLogging {
     if (allChunkIds.length > 0) {
       await Promise.all([
         this.metadataStore.deleteChunks(allChunkIds),
+        this.idbEmbeddingStore.deleteEmbeddings(allChunkIds),
         this.embeddingStore.deleteEmbeddings(allChunkIds),
         this.bm25Store.deleteChunks(allChunkIds),
       ]);
@@ -1209,6 +1230,7 @@ export class IndexManager extends WithLogging {
     const chunkIds = chunks.map(c => c.id);
 
     await this.metadataStore.deleteChunks(chunkIds);
+    await this.idbEmbeddingStore.deleteEmbeddings(chunkIds);
     await this.embeddingStore.deleteEmbeddings(chunkIds);
     if (includeBM25) {
       await this.bm25Store.deleteChunks(chunkIds);
@@ -1257,7 +1279,7 @@ export class IndexManager extends WithLogging {
         });
       }
 
-      await this.metadataStore.addChunks([
+      const imageMetadata = [
         {
           id: ChunkId.forContent(file.path, 0),
           filePath: file.path,
@@ -1268,8 +1290,23 @@ export class IndexManager extends WithLogging {
           size: file.stat.size,
           indexedAt,
         },
+      ];
+      await Promise.all([
+        this.metadataStore.addChunks(imageMetadata),
+        this.idbEmbeddingStore.addEmbeddings(embeddingData),
       ]);
-      await this.embeddingStore.addEmbeddings(embeddingData);
+      try {
+        await this.embeddingStore.addEmbeddings(embeddingData);
+      } catch (zvecErr) {
+        const ids = imageMetadata.map(m => m.id);
+        await Promise.all([
+          this.metadataStore.deleteChunks(ids),
+          this.idbEmbeddingStore.deleteEmbeddings(ids),
+        ]).catch(e =>
+          this.error(`Failed to roll back IDB after zvec error: ${e}`)
+        );
+        throw zvecErr;
+      }
       await this.bm25Store.indexChunkBatch([
         { docId: ChunkId.forTitle(file.path), content: file.basename },
       ]);
@@ -1333,8 +1370,22 @@ export class IndexManager extends WithLogging {
       });
     }
 
-    await this.metadataStore.addChunks(metadataChunks);
-    await this.embeddingStore.addEmbeddings(embeddingData);
+    await Promise.all([
+      this.metadataStore.addChunks(metadataChunks),
+      this.idbEmbeddingStore.addEmbeddings(embeddingData),
+    ]);
+    try {
+      await this.embeddingStore.addEmbeddings(embeddingData);
+    } catch (zvecErr) {
+      const ids = metadataChunks.map(m => m.id);
+      await Promise.all([
+        this.metadataStore.deleteChunks(ids),
+        this.idbEmbeddingStore.deleteEmbeddings(ids),
+      ]).catch(e =>
+        this.error(`Failed to roll back IDB after zvec error: ${e}`)
+      );
+      throw zvecErr;
+    }
     await this.bm25Store.indexChunkBatch(bm25Chunks);
   }
 
@@ -1544,6 +1595,7 @@ And then reinitialize Sonar via "Reinitialize Sonar" action/command`,
   async clearCurrentIndex(): Promise<void> {
     await this.metadataStore.clearFailedFiles();
     await this.metadataStore.clearAll();
+    await this.idbEmbeddingStore.clearAll();
     await this.embeddingStore.clearAll();
     await this.bm25Store.clearAll();
     await this.updateStatus();

@@ -7,6 +7,8 @@ export const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
   verbose: 3,
 } as const;
 
+export type VectorSearchMode = 'zvec' | 'bf';
+
 export type AggregationMethod =
   | 'max_p'
   | 'top_m_sum'
@@ -101,6 +103,7 @@ export interface SonarSettings {
 
   // Search parameters
   // =================
+  vectorSearchMode: VectorSearchMode; // Vector search backend: 'zvec' (ANN) or 'bf' (brute-force cosine)
   bm25AggMethod: AggregationMethod; // BM25 aggregation method (default: 'max_p')
   vectorAggMethod: AggregationMethod; // Vector aggregation method (default: 'weighted_top_l_sum')
   aggM: number; // Number of top chunks for top_m_sum/top_m_avg (default: 3)
@@ -225,6 +228,7 @@ export const DEFAULT_SETTINGS: SonarSettings = {
 
   // Search parameters
   // =================
+  vectorSearchMode: 'zvec',
   bm25AggMethod: 'max_p',
   vectorAggMethod: 'weighted_top_l_sum',
   aggM: 3,

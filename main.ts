@@ -16,6 +16,7 @@ import { IndexManager } from './src/IndexManager';
 import { ConfigManager } from './src/ConfigManager';
 import { SettingTab } from './src/ui/SettingTab';
 import { getDBName, MetadataStore } from './src/MetadataStore';
+import { EmbeddingStore } from './src/EmbeddingStore';
 import {
   ZvecEmbeddingStore,
   configureZvecPluginDir,
@@ -511,9 +512,12 @@ export default class SonarPlugin extends Plugin {
       this.configManager
     );
 
+    const idbEmbeddingStore = new EmbeddingStore(db, this.configManager);
+
     const embeddingSearch = new EmbeddingSearch(
       this.metadataStore,
       zvecStore,
+      idbEmbeddingStore,
       this.embedder,
       this.configManager
     );
@@ -527,6 +531,7 @@ export default class SonarPlugin extends Plugin {
 
     this.indexManager = new IndexManager(
       this.metadataStore,
+      idbEmbeddingStore,
       zvecStore,
       bm25Store,
       this.embedder,

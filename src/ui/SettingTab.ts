@@ -1066,6 +1066,27 @@ Use with top-p for finer control, or set top-p to \`1.0\` to use top-k alone.`
     searchParamsDetails.createEl('summary', { text: 'Search parameters' });
     const searchParamsContainer = searchParamsDetails.createDiv();
 
+    new Setting(searchParamsContainer)
+      .setName('Vector search mode')
+      .setDesc(
+        'zvec: fast approximate nearest-neighbor search (HNSW index). ' +
+          'bf: exact brute-force cosine similarity over all IDB embeddings ' +
+          '(useful for debugging/comparing results).'
+      )
+      .addDropdown(drop =>
+        drop
+          .addOption('zvec', 'zvec (ANN — fast)')
+          .addOption('bf', 'bf (brute-force cosine — exact)')
+          .setValue(this.configManager.get('vectorSearchMode'))
+          .onChange(
+            async value =>
+              await this.configManager.set(
+                'vectorSearchMode',
+                value as 'zvec' | 'bf'
+              )
+          )
+      );
+
     const queryTokensSetting = new Setting(searchParamsContainer).setName(
       'Search query tokens'
     );

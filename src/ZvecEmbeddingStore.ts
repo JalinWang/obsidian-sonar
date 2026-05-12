@@ -74,7 +74,6 @@ function loadBinding(): ZvecBinding {
   // bare package-name resolution for native addons.
   let binding: ZvecBinding;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     binding = (window as any).require(bindingPath) as ZvecBinding;
   } catch (err) {
     throw new Error(
@@ -267,7 +266,12 @@ export class ZvecEmbeddingStore extends WithLogging {
     if (ids.length === 0) return;
 
     this.log(`Deleting ${ids.length} embeddings...`);
-    this.collection.deleteSync(ids.map(zvecDocId));
+    try {
+      this.collection.deleteSync(ids.map(zvecDocId));
+    } catch (e) {
+      this.error(`Failed to delete embeddings: ${e}`);
+      throw e
+    }
     this.log(`Deleted ${ids.length} embeddings`);
   }
 
@@ -284,9 +288,12 @@ export class ZvecEmbeddingStore extends WithLogging {
       filter,
       outputFields: ['chunkId'],
     });
+    // zvec COSINE metric returns cosine distance (0 = identical, 1 = orthogonal).
+    // Downstream aggregation expects cosine similarity (1 = identical, 0 = orthogonal),
+    // so invert the score here.
     return results.map(doc => ({
       id: doc.fields.chunkId as string,
-      score: doc.score,
+      score: 1 - doc.score,
     }));
   }
 
@@ -338,9 +345,7 @@ export class ZvecEmbeddingStore extends WithLogging {
     });
 
     if (alreadyMigrated) {
-      zvecStore.log(
-        ` Already migrated.`
-      );
+      zvecStore.log(` Already migrated.`);
       // return 0;
     }
 
