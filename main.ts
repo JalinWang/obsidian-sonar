@@ -16,7 +16,10 @@ import { IndexManager } from './src/IndexManager';
 import { ConfigManager } from './src/ConfigManager';
 import { SettingTab } from './src/ui/SettingTab';
 import { getDBName, MetadataStore } from './src/MetadataStore';
-import { ZvecEmbeddingStore } from './src/ZvecEmbeddingStore';
+import {
+  ZvecEmbeddingStore,
+  configureZvecPluginDir,
+} from './src/ZvecEmbeddingStore';
 import type { Embedder } from './src/Embedder';
 import type { Reranker } from './src/Reranker';
 import { LlamaCppEmbedder } from './src/llamacpp/LlamaCppEmbedder';
@@ -447,6 +450,13 @@ export default class SonarPlugin extends Plugin {
 
     const sanitizeForPath = (str: string): string =>
       str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
+
+    // Provide the absolute plugin directory so ZvecEmbeddingStore can load
+    // the native binary via an absolute path (Electron's plugin: URL scheme
+    // prevents bare require('@zvec/...') from resolving node_modules).
+    const pluginDir = `${basePath}/${this.manifest.dir}`;
+    configureZvecPluginDir(pluginDir);
+
     const zvecCollectionPath = `${basePath}/.obsidian/plugins/obsidian-sonar/zvec/${sanitizeForPath(embedderModelIdentifier)}`;
 
     sonarState.setStatusBarText('Loading vector store...');

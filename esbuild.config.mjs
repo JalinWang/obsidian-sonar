@@ -62,6 +62,11 @@ const context = await esbuild.context({
   ],
   format: 'cjs',
   target: 'es2018',
+  // Copy .node files to the output directory so native addons land next to
+  // main.js.  The actual loading is done at runtime via an absolute path
+  // (see ZvecEmbeddingStore.ts); this ensures esbuild never tries to inline
+  // or parse .node binaries.
+  loader: { '.node': 'copy' },
   plugins: [
     esbuildSvelte({
       compilerOptions: { css: 'injected' },
