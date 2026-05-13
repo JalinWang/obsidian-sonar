@@ -14,7 +14,7 @@ import { ChunkId } from './chunkId';
 
 const ZVEC_TOPK_MULTIPLIER = 10;
 const ZVEC_TOPK_MINIMUM = 100;
-const LOG_TOP_N = 5;
+const LOG_TOP_N = 20;
 
 function cosineSimilarity(vec1: number[], vec2: number[]): number {
   let dot = 0;
@@ -110,23 +110,22 @@ export class EmbeddingSearch extends WithLogging {
     type: 'title' | 'content',
     options: FullSearchOptions
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
+    const t0 = Date.now();
+
     const queryEmbeddings = await this.embedder.getEmbeddings([query]);
     const queryEmbedding = queryEmbeddings[0];
+    const tEmbed = Date.now();
 
     const topk = Math.max(
       (options.retrievalLimit ?? 20) * ZVEC_TOPK_MULTIPLIER,
       ZVEC_TOPK_MINIMUM
     );
     const rawResults = this.zvecStore.search(queryEmbedding, topk, type);
-
-    this.log(
-      `[zvec] query="${query}" type=${type} topk=${topk} raw_hits=${rawResults.length}`
-    );
-    this.logTopResults('[zvec]', rawResults.slice(0, LOG_TOP_N));
-
-    if (rawResults.length === 0) return [];
+    const tAnn = Date.now();
 
     const allChunks = await this.metadataStore.getAllChunks();
+    const tMeta = Date.now();
+
     const metadataById = new Map<string, ChunkMetadata>();
     const metadataByFilePath = new Map<string, ChunkMetadata>();
     for (const meta of allChunks) {
@@ -155,6 +154,13 @@ export class EmbeddingSearch extends WithLogging {
       if (!matchesFolderFilters(meta.filePath, options)) continue;
       results.push({ id, score, metadata: meta });
     }
+    const tTotal = Date.now();
+
+    this.log(
+      `[zvec] query="${query}" type=${type} topk=${topk} raw_hits=${rawResults.length} results=${results.length} | ` +
+        `embed=${tEmbed - t0}ms ann=${tAnn - tEmbed}ms meta=${tMeta - tAnn}ms filter=${tTotal - tMeta}ms total=${tTotal - t0}ms`
+    );
+    this.logTopResults('[zvec]', rawResults.slice(0, LOG_TOP_N));
 
     return results;
   }
@@ -168,13 +174,17 @@ export class EmbeddingSearch extends WithLogging {
     type: 'title' | 'content',
     options: FullSearchOptions
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
+    const t0 = Date.now();
+
     const queryEmbeddings = await this.embedder.getEmbeddings([query]);
     const queryEmbedding = queryEmbeddings[0];
+    const tEmbed = Date.now();
 
     const [allEmbeddings, allChunks] = await Promise.all([
       this.idbEmbeddingStore.getAllEmbeddings(),
       this.metadataStore.getAllChunks(),
     ]);
+    const tLoad = Date.now();
 
     const metadataById = new Map<string, ChunkMetadata>();
     const metadataByFilePath = new Map<string, ChunkMetadata>();
@@ -198,11 +208,7 @@ export class EmbeddingSearch extends WithLogging {
         score: cosineSimilarity(queryEmbedding, emb.embedding),
       }))
       .sort((a, b) => b.score - a.score);
-
-    this.log(
-      `[bf] query="${query}" type=${type} candidates=${filtered.length}`
-    );
-    this.logTopResults('[bf]', scored.slice(0, LOG_TOP_N));
+    const tScored = Date.now();
 
     const results: Array<{
       id: string;
@@ -230,6 +236,13 @@ export class EmbeddingSearch extends WithLogging {
         break;
       }
     }
+    const tTotal = Date.now();
+
+    this.log(
+      `[bf] query="${query}" type=${type} candidates=${filtered.length} results=${results.length} | ` +
+        `embed=${tEmbed - t0}ms load=${tLoad - tEmbed}ms cosine+sort=${tScored - tLoad}ms filter=${tTotal - tScored}ms total=${tTotal - t0}ms`
+    );
+    this.logTopResults('[bf]', scored.slice(0, LOG_TOP_N));
 
     return results;
   }

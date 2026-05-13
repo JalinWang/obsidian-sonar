@@ -6,6 +6,7 @@ import { createHash } from 'crypto';
 import * as path from 'path';
 
 const COLLECTION_NAME = 'sonar_embeddings';
+const ZVEC_MAX_BATCH_SIZE = 1024;
 const VECTOR_FIELD = 'embedding';
 const IDB_STORE_EMBEDDINGS = 'embeddings';
 const MIGRATION_SENTINEL_ID = '__zvec_migration_v1';
@@ -258,7 +259,10 @@ export class ZvecEmbeddingStore extends WithLogging {
       },
     }));
 
-    this.collection.upsertSync(docs);
+    // zvec enforces a max write batch size of 1024 documents per upsertSync call.
+    for (let i = 0; i < docs.length; i += ZVEC_MAX_BATCH_SIZE) {
+      this.collection.upsertSync(docs.slice(i, i + ZVEC_MAX_BATCH_SIZE));
+    }
     this.log(`Indexed ${items.length} embeddings`);
   }
 
@@ -270,7 +274,7 @@ export class ZvecEmbeddingStore extends WithLogging {
       this.collection.deleteSync(ids.map(zvecDocId));
     } catch (e) {
       this.error(`Failed to delete embeddings: ${e}`);
-      throw e
+      throw e;
     }
     this.log(`Deleted ${ids.length} embeddings`);
   }
@@ -346,7 +350,7 @@ export class ZvecEmbeddingStore extends WithLogging {
 
     if (alreadyMigrated) {
       zvecStore.log(` Already migrated.`);
-      // return 0;
+      return 0;
     }
 
     const allRecords = await new Promise<
