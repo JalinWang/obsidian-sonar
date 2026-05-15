@@ -22,6 +22,7 @@ export class SettingTab extends PluginSettingTab {
   statsDiv: HTMLDivElement | null = null;
   private configManager: ConfigManager;
   private configListeners: Array<() => void> = [];
+  private sectionExpandState = new Map<string, boolean>();
 
   constructor(app: App, plugin: SonarPlugin) {
     super(app, plugin);
@@ -31,6 +32,7 @@ export class SettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
+    this.saveExpandState();
     containerEl.empty();
 
     this.setupConfigListeners();
@@ -86,6 +88,35 @@ export class SettingTab extends PluginSettingTab {
     this.configListeners = [];
   }
 
+  private saveExpandState(): void {
+    const details = this.containerEl.querySelectorAll('details');
+    for (const detail of Array.from(details)) {
+      const summary = detail.querySelector(':scope > summary');
+      if (summary?.textContent) {
+        this.sectionExpandState.set(summary.textContent, detail.open);
+      }
+    }
+  }
+
+  private createCollapsibleSection(
+    containerEl: HTMLElement,
+    title: string,
+    options?: { defaultOpen?: boolean; subsection?: boolean }
+  ): HTMLDivElement {
+    const cls = options?.subsection
+      ? 'sonar-settings-subsection'
+      : 'sonar-settings-section';
+    const details = containerEl.createEl('details', { cls });
+    details.createEl('summary', { text: title });
+    const savedState = this.sectionExpandState.get(title);
+    const isOpen =
+      savedState !== undefined ? savedState : (options?.defaultOpen ?? false);
+    if (isOpen) {
+      details.setAttr('open', '');
+    }
+    return details.createDiv();
+  }
+
   private setupConfigListeners(): void {
     this.configListeners.forEach(unsubscribe => unsubscribe());
     this.configListeners = [];
@@ -115,12 +146,11 @@ export class SettingTab extends PluginSettingTab {
   }
 
   private createActionsSection(containerEl: HTMLElement): void {
-    const actionsDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    actionsDetails.setAttr('open', '');
-    actionsDetails.createEl('summary', { text: 'Actions' });
-    const actionsContainer = actionsDetails.createDiv();
+    const actionsContainer = this.createCollapsibleSection(
+      containerEl,
+      'Actions',
+      { defaultOpen: true }
+    );
 
     let indexPath = `\`${this.configManager.get('indexPath')}\``;
     if (indexPath == '``') {
@@ -241,11 +271,10 @@ export class SettingTab extends PluginSettingTab {
   }
 
   private createStatisticsSection(containerEl: HTMLElement): void {
-    const statsDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    statsDetails.createEl('summary', { text: 'Statistics' });
-    const statsContainer = statsDetails.createDiv();
+    const statsContainer = this.createCollapsibleSection(
+      containerEl,
+      'Statistics'
+    );
     const statsDiv = statsContainer.createDiv({
       cls: 'sonar-stats-in-settings',
     });
@@ -273,11 +302,10 @@ export class SettingTab extends PluginSettingTab {
   }
 
   private createIndexConfigSection(containerEl: HTMLElement): void {
-    const indexConfigDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    indexConfigDetails.createEl('summary', { text: 'Index configuration' });
-    const indexConfigContainer = indexConfigDetails.createDiv();
+    const indexConfigContainer = this.createCollapsibleSection(
+      containerEl,
+      'Index configuration'
+    );
 
     const indexPathSetting = new Setting(indexConfigContainer).setName(
       'Index path'
@@ -349,11 +377,10 @@ Supports:
   }
 
   private createUiPreferencesSection(containerEl: HTMLElement): void {
-    const uiPreferencesDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    uiPreferencesDetails.createEl('summary', { text: 'UI preferences' });
-    const uiPreferencesContainer = uiPreferencesDetails.createDiv();
+    const uiPreferencesContainer = this.createCollapsibleSection(
+      containerEl,
+      'UI preferences'
+    );
 
     const autoOpenSetting = new Setting(uiPreferencesContainer).setName(
       'Auto-open related notes view'
@@ -477,13 +504,10 @@ This is the final number after chunk aggregation:
   }
 
   private createChunkingConfigSection(containerEl: HTMLElement): void {
-    const chunkingConfigDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    chunkingConfigDetails.createEl('summary', {
-      text: 'Chunking configuration',
-    });
-    const chunkingConfigContainer = chunkingConfigDetails.createDiv();
+    const chunkingConfigContainer = this.createCollapsibleSection(
+      containerEl,
+      'Chunking configuration'
+    );
 
     const maxChunkSizeSetting = new Setting(chunkingConfigContainer).setName(
       'Max chunk size'
@@ -525,13 +549,10 @@ This is the final number after chunk aggregation:
   }
 
   private createLlamaCppConfigSection(containerEl: HTMLElement): void {
-    const llamacppDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    llamacppDetails.createEl('summary', {
-      text: 'llama.cpp configuration',
-    });
-    const llamacppContainer = llamacppDetails.createDiv();
+    const llamacppContainer = this.createCollapsibleSection(
+      containerEl,
+      'llama.cpp configuration'
+    );
 
     const llamacppServerPathSetting = new Setting(llamacppContainer).setName(
       'Server path'
@@ -660,11 +681,10 @@ This is the final number after chunk aggregation:
   }
 
   private createBackendSelectionSection(containerEl: HTMLElement): void {
-    const backendDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    backendDetails.createEl('summary', { text: 'Backend selection' });
-    const backendContainer = backendDetails.createDiv();
+    const backendContainer = this.createCollapsibleSection(
+      containerEl,
+      'Backend selection'
+    );
 
     const embeddingBackendSetting = new Setting(backendContainer).setName(
       'Embedding backend'
@@ -705,11 +725,10 @@ This is the final number after chunk aggregation:
   }
 
   private createDashScopeConfigSection(containerEl: HTMLElement): void {
-    const dsDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    dsDetails.createEl('summary', { text: 'DashScope configuration' });
-    const dsContainer = dsDetails.createDiv();
+    const dsContainer = this.createCollapsibleSection(
+      containerEl,
+      'DashScope configuration'
+    );
 
     const apiKeySetting = new Setting(dsContainer).setName('API key');
     this.renderMarkdownDesc(
@@ -795,11 +814,10 @@ This is the final number after chunk aggregation:
   }
 
   private createChatConfigSection(containerEl: HTMLElement): void {
-    const chatDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    chatDetails.createEl('summary', { text: 'Chat configuration' });
-    const chatContainer = chatDetails.createDiv();
+    const chatContainer = this.createCollapsibleSection(
+      containerEl,
+      'Chat configuration'
+    );
 
     // Chat general settings
     const maxTokensSetting = new Setting(chatContainer).setName(
@@ -901,12 +919,11 @@ This content is included in the system prompt to help the assistant understand y
         )
     );
 
-    // Builtin tools settings subsection (collapsible)
-    const builtinToolsDetails = chatContainer.createEl('details', {
-      cls: 'sonar-settings-subsection',
-    });
-    builtinToolsDetails.createEl('summary', { text: 'Builtin tools settings' });
-    const builtinToolsContainer = builtinToolsDetails.createDiv();
+    const builtinToolsContainer = this.createCollapsibleSection(
+      chatContainer,
+      'Builtin tools settings',
+      { subsection: true }
+    );
 
     builtinToolsContainer.createEl('h5', { text: 'Edit note' });
 
@@ -945,13 +962,11 @@ When enabled, the assistant can retrieve web page content when you provide a URL
         )
     );
 
-    // Extension tools subsection
-    const extensionToolsDetails = chatContainer.createEl('details', {
-      cls: 'sonar-settings-subsection',
-      attr: { open: true },
-    });
-    extensionToolsDetails.createEl('summary', { text: 'Extension tools' });
-    const extensionToolsContainer = extensionToolsDetails.createDiv();
+    const extensionToolsContainer = this.createCollapsibleSection(
+      chatContainer,
+      'Extension tools',
+      { subsection: true, defaultOpen: true }
+    );
 
     const extensionToolsPathSetting = new Setting(
       extensionToolsContainer
@@ -978,12 +993,11 @@ See the plugin documentation for script format and examples.`
       cls: 'setting-item-description',
     });
 
-    // Generation parameters subsection (collapsible)
-    const genDetails = chatContainer.createEl('details', {
-      cls: 'sonar-settings-subsection',
-    });
-    genDetails.createEl('summary', { text: 'Generation parameters' });
-    const genContainer = genDetails.createDiv();
+    const genContainer = this.createCollapsibleSection(
+      chatContainer,
+      'Generation parameters',
+      { subsection: true }
+    );
 
     const temperatureSetting = new Setting(genContainer).setName('Temperature');
     this.renderMarkdownDesc(
@@ -1060,11 +1074,10 @@ Use with top-p for finer control, or set top-p to \`1.0\` to use top-k alone.`
   }
 
   private createSearchParamsSection(containerEl: HTMLElement): void {
-    const searchParamsDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    searchParamsDetails.createEl('summary', { text: 'Search parameters' });
-    const searchParamsContainer = searchParamsDetails.createDiv();
+    const searchParamsContainer = this.createCollapsibleSection(
+      containerEl,
+      'Search parameters'
+    );
 
     new Setting(searchParamsContainer)
       .setName('Vector search mode')
@@ -1264,11 +1277,10 @@ Larger values increase recall but may add noise; smaller values focus on high-qu
   }
 
   private createLoggingConfigSection(containerEl: HTMLElement): void {
-    const loggingDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    loggingDetails.createEl('summary', { text: 'Logging configuration' });
-    const loggingContainer = loggingDetails.createDiv();
+    const loggingContainer = this.createCollapsibleSection(
+      containerEl,
+      'Logging configuration'
+    );
 
     const statusBarSetting = new Setting(loggingContainer).setName(
       'Status bar max length'
@@ -1305,13 +1317,10 @@ Larger values increase recall but may add noise; smaller values focus on high-qu
   }
 
   private createAudioConfigSection(containerEl: HTMLElement): void {
-    const audioDetails = containerEl.createEl('details', {
-      cls: 'sonar-settings-section',
-    });
-    audioDetails.createEl('summary', {
-      text: 'Audio transcription configuration',
-    });
-    const audioContainer = audioDetails.createDiv();
+    const audioContainer = this.createCollapsibleSection(
+      containerEl,
+      'Audio transcription configuration'
+    );
 
     const whisperPathSetting = new Setting(audioContainer).setName(
       'Whisper CLI path'
