@@ -698,6 +698,22 @@ This is the final number after chunk aggregation:
         })
     );
 
+    const multimodalSetting = new Setting(backendContainer).setName(
+      'Multimodal embedding'
+    );
+    this.renderMarkdownDesc(
+      multimodalSetting.descEl,
+      "Enable multimodal embedding for image files. When enabled, images are embedded using the model's vision capabilities. Requires a multimodal embedding model. Changing this requires reinitialization."
+    );
+    multimodalSetting.addToggle(toggle =>
+      toggle
+        .setValue(this.configManager.get('embeddingMultimodal'))
+        .onChange(
+          async value =>
+            await this.configManager.set('embeddingMultimodal', value)
+        )
+    );
+
     const rerankBackendSetting = new Setting(backendContainer).setName(
       'Rerank backend'
     );

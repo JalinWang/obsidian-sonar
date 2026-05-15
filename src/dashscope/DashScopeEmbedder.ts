@@ -19,10 +19,14 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
     private model: string,
     dimension: number,
     protected configManager: ConfigManager,
-    private onStatusChange: (status: ModelStatus) => void
+    private onStatusChange: (status: ModelStatus) => void,
+    multimodal: boolean = false
   ) {
     super();
     this._dimension = dimension;
+    if (multimodal) {
+      this.getImageEmbedding = this._getImageEmbedding.bind(this);
+    }
   }
 
   get status(): ModelStatus {
@@ -92,7 +96,9 @@ export class DashScopeEmbedder extends WithLogging implements Embedder {
     return allEmbeddings;
   }
 
-  async getImageEmbedding(input: MultimodalInput): Promise<number[]> {
+  getImageEmbedding?: (input: MultimodalInput) => Promise<number[]>;
+
+  private async _getImageEmbedding(input: MultimodalInput): Promise<number[]> {
     if (this._status !== 'ready') {
       throw new Error('Embedder not initialized. Call initialize() first.');
     }

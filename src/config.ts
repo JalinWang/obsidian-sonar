@@ -23,6 +23,7 @@ export interface SonarSettings {
   // Backend configuration
   // =====================
   embeddingBackend: EmbeddingBackend;
+  embeddingMultimodal: boolean; // Whether the embedding model supports multimodal input (images)
   rerankBackend: RerankBackend;
 
   // Index configuration
@@ -152,6 +153,7 @@ export const DEFAULT_SETTINGS: SonarSettings = {
   // Backend configuration
   // =====================
   embeddingBackend: 'llamacpp',
+  embeddingMultimodal: false,
   rerankBackend: 'llamacpp',
 
   // Index configuration

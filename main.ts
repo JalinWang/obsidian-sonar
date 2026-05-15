@@ -333,13 +333,15 @@ export default class SonarPlugin extends Plugin {
         this.configManager.get('dashscopeEmbeddingDimension') ||
         DEFAULT_SETTINGS.dashscopeEmbeddingDimension;
       embedderModelIdentifier = `dashscope/${model}/${dimension}`;
+      const multimodal = this.configManager.get('embeddingMultimodal');
       embedder = new DashScopeEmbedder(
         apiKey,
         baseUrl,
         model,
         dimension,
         this.configManager,
-        status => sonarState.setEmbedderStatus(status)
+        status => sonarState.setEmbedderStatus(status),
+        multimodal
       );
     } else {
       const serverPath = this.configManager.get('llamacppServerPath');

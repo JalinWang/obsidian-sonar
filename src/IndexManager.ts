@@ -830,8 +830,10 @@ export class IndexManager extends WithLogging {
       for (const [fileIndex, embeddings] of fileEmbeddingsMap.entries()) {
         const { chunks, isImage } = fileChunkDataList[fileIndex];
         const expectedCount = isImage
-          ? 2 // title + image embedding
-          : 1 + chunks.length; // title + text chunks
+          ? this.embedder.getImageEmbedding
+            ? 2
+            : 1
+          : 1 + chunks.length;
         if (embeddings.length === expectedCount) {
           completedFileIndices.push(fileIndex);
         }
