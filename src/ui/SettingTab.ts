@@ -731,6 +731,21 @@ This is the final number after chunk aggregation:
         })
     );
 
+    const rerankMultimodalSetting = new Setting(backendContainer).setName(
+      'Multimodal reranking'
+    );
+    this.renderMarkdownDesc(
+      rerankMultimodalSetting.descEl,
+      'Enable multimodal reranking for image files. When enabled, images are sent to the reranker using their visual content instead of placeholder text. Requires a multimodal rerank model (e.g., `qwen3-vl-rerank`). Changing this requires reinitialization.'
+    );
+    rerankMultimodalSetting.addToggle(toggle =>
+      toggle
+        .setValue(this.configManager.get('rerankMultimodal'))
+        .onChange(
+          async value => await this.configManager.set('rerankMultimodal', value)
+        )
+    );
+
     this.createLlamaCppConfigSection(backendContainer);
     this.createDashScopeConfigSection(backendContainer);
     this.createAudioConfigSection(backendContainer);

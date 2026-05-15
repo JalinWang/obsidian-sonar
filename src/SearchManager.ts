@@ -9,8 +9,9 @@ import {
   aggregateChunksToFiles,
   mergeAndDeduplicateChunks,
 } from './SearchResultFusion';
-import type { Reranker } from './Reranker';
+import type { Reranker, RerankDocument, RerankResult } from './Reranker';
 import { truncateTextToTokens } from './QueryProcessor';
+import { isImageExtension } from './fileFilters';
 
 /**
  * Chunk-level search result returned by BM25Search/EmbeddingSearch
@@ -170,7 +171,8 @@ export class SearchManager extends WithLogging {
     private embeddingSearch: EmbeddingSearch,
     private bm25Search: BM25Search,
     private reranker: Reranker,
-    protected configManager: ConfigManager
+    protected configManager: ConfigManager,
+    private readImageBase64?: (filePath: string) => Promise<string | null>
   ) {
     super();
     this.log('Initialized');
@@ -363,11 +365,17 @@ export class SearchManager extends WithLogging {
   ): Promise<SearchResult[]> {
     const documents = results.map(r => r.topChunk.content);
     const fittedQuery = await this.fitQueryToRerankerContext(query, documents);
-    const rerankResults = await this.reranker.rerank(
-      fittedQuery,
-      documents,
-      topK
-    );
+
+    const rerankResults = this.reranker.rerankMultimodal
+      ? await this.rerankWithMultimodal(
+          fittedQuery,
+          results.map(r => ({
+            content: r.topChunk.content,
+            filePath: r.filePath,
+          })),
+          topK
+        )
+      : await this.reranker.rerank(fittedQuery, documents, topK);
 
     // Normalize scores to [0, 1]
     const maxScore = Math.max(...rerankResults.map(r => r.relevanceScore));
@@ -487,7 +495,6 @@ export class SearchManager extends WithLogging {
       };
     }
 
-    // Rerank all chunks (optionally with title prepended for better relevance)
     const rerankStart = performance.now();
     const prependTitle = options.prependTitleToChunks ?? true;
     const documents = mergedChunks.map(c => {
@@ -496,7 +503,17 @@ export class SearchManager extends WithLogging {
       return title ? `${title}\n\n${c.content}` : c.content;
     });
     const fittedQuery = await this.fitQueryToRerankerContext(query, documents);
-    const rerankResults = await this.reranker.rerank(fittedQuery, documents);
+
+    const rerankResults = this.reranker.rerankMultimodal
+      ? await this.rerankWithMultimodal(
+          fittedQuery,
+          mergedChunks.map((c, i) => ({
+            content: documents[i],
+            filePath: c.filePath,
+          })),
+          undefined
+        )
+      : await this.reranker.rerank(fittedQuery, documents);
     const rerankTimeMs = performance.now() - rerankStart;
 
     // Update chunk scores with rerank scores
@@ -672,16 +689,40 @@ export class SearchManager extends WithLogging {
     });
 
     const fittedQuery = await this.fitQueryToRerankerContext(query, documents);
-    const rerankResults = await this.reranker.rerank(
-      fittedQuery,
-      documents,
-      maxChunks
-    );
+
+    const rerankResults = this.reranker.rerankMultimodal
+      ? await this.rerankWithMultimodal(
+          fittedQuery,
+          mergedChunks.map((c, i) => ({
+            content: documents[i],
+            filePath: c.filePath,
+          })),
+          maxChunks
+        )
+      : await this.reranker.rerank(fittedQuery, documents, maxChunks);
 
     return rerankResults.map(r => ({
       ...mergedChunks[r.index],
       score: r.relevanceScore,
     }));
+  }
+
+  private async rerankWithMultimodal(
+    query: string,
+    items: Array<{ content: string; filePath: string }>,
+    topN?: number
+  ): Promise<RerankResult[]> {
+    const documents: RerankDocument[] = await Promise.all(
+      items.map(async item => {
+        const ext = item.filePath.split('.').pop() ?? '';
+        if (isImageExtension(ext) && this.readImageBase64) {
+          const base64 = await this.readImageBase64(item.filePath);
+          if (base64) return { image: base64 };
+        }
+        return { text: item.content };
+      })
+    );
+    return this.reranker.rerankMultimodal!(query, documents, topN);
   }
 
   /**

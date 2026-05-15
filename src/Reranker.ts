@@ -5,6 +5,11 @@ export interface RerankResult {
   relevanceScore: number;
 }
 
+export interface RerankDocument {
+  text?: string;
+  image?: string;
+}
+
 export interface Reranker {
   readonly status: ModelStatus;
   readonly contextSize: number | null;
@@ -14,6 +19,11 @@ export interface Reranker {
   rerank(
     query: string,
     documents: string[],
+    topN?: number
+  ): Promise<RerankResult[]>;
+  rerankMultimodal?(
+    query: string,
+    documents: RerankDocument[],
     topN?: number
   ): Promise<RerankResult[]>;
   countTokens(text: string): Promise<number>;

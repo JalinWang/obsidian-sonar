@@ -1,8 +1,8 @@
 import type { ConfigManager } from '../ConfigManager';
-import type { Reranker, RerankResult } from '../Reranker';
+import type { Reranker, RerankDocument, RerankResult } from '../Reranker';
 import type { ModelStatus } from '../SonarState';
 import { WithLogging } from '../WithLogging';
-import { dashscopeRerank } from './dashscopeApi';
+import { dashscopeMultimodalRerank, dashscopeRerank } from './dashscopeApi';
 
 const DEFAULT_CONTEXT_SIZE = 4000;
 
@@ -16,9 +16,13 @@ export class DashScopeReranker extends WithLogging implements Reranker {
     private baseUrl: string,
     private model: string,
     protected configManager: ConfigManager,
-    private onStatusChange: (status: ModelStatus) => void
+    private onStatusChange: (status: ModelStatus) => void,
+    multimodal: boolean = false
   ) {
     super();
+    if (multimodal) {
+      this.rerankMultimodal = this._rerankMultimodal.bind(this);
+    }
   }
 
   get status(): ModelStatus {
@@ -72,6 +76,30 @@ export class DashScopeReranker extends WithLogging implements Reranker {
       this.apiKey,
       this.model,
       query,
+      documents,
+      topN ?? documents.length
+    );
+  }
+
+  rerankMultimodal?: (
+    query: string,
+    documents: RerankDocument[],
+    topN?: number
+  ) => Promise<RerankResult[]>;
+
+  private async _rerankMultimodal(
+    query: string,
+    documents: RerankDocument[],
+    topN?: number
+  ): Promise<RerankResult[]> {
+    if (this._status !== 'ready') {
+      throw new Error('Reranker not initialized. Call initialize() first.');
+    }
+    return dashscopeMultimodalRerank(
+      this.baseUrl,
+      this.apiKey,
+      this.model,
+      { text: query },
       documents,
       topN ?? documents.length
     );

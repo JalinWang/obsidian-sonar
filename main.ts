@@ -376,12 +376,14 @@ export default class SonarPlugin extends Plugin {
         this.configManager.get('dashscopeRerankModel') ||
         DEFAULT_SETTINGS.dashscopeRerankModel;
       rerankerModelIdentifier = `dashscope/${model}`;
+      const rerankMultimodal = this.configManager.get('rerankMultimodal');
       reranker = new DashScopeReranker(
         apiKey,
         baseUrl,
         model,
         this.configManager,
-        status => sonarState.setRerankerStatus(status)
+        status => sonarState.setRerankerStatus(status),
+        rerankMultimodal
       );
     } else {
       const serverPath = this.configManager.get('llamacppServerPath');
@@ -528,7 +530,19 @@ export default class SonarPlugin extends Plugin {
       embeddingSearch,
       bm25Search,
       this.reranker!,
-      this.configManager
+      this.configManager,
+      async (filePath: string) => {
+        const file = this.app.vault.getFileByPath(filePath);
+        if (!file) return null;
+        const buffer = await this.app.vault.readBinary(file);
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const mimeType = `image/${file.extension}`;
+        return `data:${mimeType};base64,${btoa(binary)}`;
+      }
     );
 
     this.indexManager = new IndexManager(

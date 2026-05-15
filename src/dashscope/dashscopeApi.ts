@@ -1,6 +1,6 @@
 import { requestUrl } from 'obsidian';
 import type { MultimodalInput } from '../Embedder';
-import type { RerankResult } from '../Reranker';
+import type { RerankDocument, RerankResult } from '../Reranker';
 
 interface DashScopeMultimodalEmbeddingResponse {
   output: {
@@ -101,6 +101,41 @@ export async function dashscopeRerank(
   if (response.status !== 200) {
     throw new Error(
       `DashScope rerank failed: ${response.status} ${response.text}`
+    );
+  }
+
+  const data = response.json as DashScopeRerankResponse;
+  return data.output.results.map(r => ({
+    index: r.index,
+    relevanceScore: r.relevance_score,
+  }));
+}
+
+export async function dashscopeMultimodalRerank(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  query: RerankDocument,
+  documents: RerankDocument[],
+  topN?: number
+): Promise<RerankResult[]> {
+  const parameters: Record<string, unknown> = {};
+  if (topN !== undefined) parameters.top_n = topN;
+
+  const response = await requestUrl({
+    url: `${baseUrl}/services/rerank/text-rerank/text-rerank`,
+    method: 'POST',
+    headers: buildHeaders(apiKey),
+    body: JSON.stringify({
+      model,
+      input: { query, documents },
+      parameters,
+    }),
+  });
+
+  if (response.status !== 200) {
+    throw new Error(
+      `DashScope multimodal rerank failed: ${response.status} ${response.text}`
     );
   }
 
