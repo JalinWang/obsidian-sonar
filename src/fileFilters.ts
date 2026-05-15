@@ -2,7 +2,7 @@ import { TFile, Vault, normalizePath } from 'obsidian';
 import { ConfigManager } from './ConfigManager';
 import { getAudioExtensions } from './audio';
 
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'bmp']; // 'gif', 'svg' don't support
 
 export function isImageExtension(ext: string): boolean {
   return IMAGE_EXTENSIONS.includes(ext.toLowerCase());
@@ -40,9 +40,11 @@ function matchesExclusionPattern(filePath: string, pattern: string): boolean {
     return regex.test(filePath);
   }
 
-  // Check if it's a folder name or path
+  // Check if it's a folder name or exact file path (no slash)
   if (!cleanPattern.includes('/')) {
-    // Check if any folder in the path matches the pattern
+    // Exact file path match (e.g. "README.md" matches root-level README.md)
+    if (filePath === cleanPattern) return true;
+    // Check if any parent folder in the path matches the pattern
     const pathParts = filePath.split('/');
     return pathParts.slice(0, -1).includes(cleanPattern);
   }
