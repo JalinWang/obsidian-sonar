@@ -20,8 +20,8 @@ export type EmbeddingBackend = 'llamacpp' | 'dashscope';
 export type RerankBackend = 'llamacpp' | 'dashscope';
 
 export interface SonarSettings {
-  // Backend selection
-  // =================
+  // Backend configuration
+  // =====================
   embeddingBackend: EmbeddingBackend;
   rerankBackend: RerankBackend;
 
@@ -149,8 +149,8 @@ export interface SonarSettings {
 }
 
 export const DEFAULT_SETTINGS: SonarSettings = {
-  // Backend selection
-  // =================
+  // Backend configuration
+  // =====================
   embeddingBackend: 'llamacpp',
   rerankBackend: 'llamacpp',
 

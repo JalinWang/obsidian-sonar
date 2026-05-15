@@ -39,14 +39,10 @@ export class SettingTab extends PluginSettingTab {
 
     this.createActionsSection(containerEl);
     this.createStatisticsSection(containerEl);
-    this.createBackendSelectionSection(containerEl);
-    this.createLlamaCppConfigSection(containerEl);
-    this.createDashScopeConfigSection(containerEl);
+    this.createBackendConfigSection(containerEl);
     this.createIndexConfigSection(containerEl);
-    this.createAudioConfigSection(containerEl);
     this.createUiPreferencesSection(containerEl);
     this.createChatConfigSection(containerEl);
-    this.createChunkingConfigSection(containerEl);
     this.createSearchParamsSection(containerEl);
     this.createLoggingConfigSection(containerEl);
 
@@ -374,6 +370,46 @@ Supports:
           async value => await this.configManager.set('autoIndex', value)
         )
     );
+
+    indexConfigContainer.createEl('h4', { text: 'Chunking' });
+
+    const maxChunkSizeSetting = new Setting(indexConfigContainer).setName(
+      'Max chunk size'
+    );
+    this.renderMarkdownDesc(
+      maxChunkSizeSetting.descEl,
+      `Maximum tokens per chunk (recommended: \`512\`).
+- Larger values: more context per chunk, better for understanding broader topics.
+- Smaller values*: more granular chunks, better for precise keyword matching.`
+    );
+    maxChunkSizeSetting.addSlider(slider =>
+      slider
+        .setLimits(64, 2048, 64)
+        .setValue(this.configManager.get('maxChunkSize'))
+        .setDynamicTooltip()
+        .onChange(
+          async value => await this.configManager.set('maxChunkSize', value)
+        )
+    );
+
+    const chunkOverlapSetting = new Setting(indexConfigContainer).setName(
+      'Chunk overlap'
+    );
+    this.renderMarkdownDesc(
+      chunkOverlapSetting.descEl,
+      `Number of overlapping tokens between consecutive chunks (recommended: \`64\`, ~10% of chunk size).
+- Larger values: less context lost at chunk boundaries, but larger index size.
+- Smaller values: smaller index, but potentially fragmented context.`
+    );
+    chunkOverlapSetting.addSlider(slider =>
+      slider
+        .setLimits(0, 256, 8)
+        .setValue(this.configManager.get('chunkOverlap'))
+        .setDynamicTooltip()
+        .onChange(
+          async value => await this.configManager.set('chunkOverlap', value)
+        )
+    );
   }
 
   private createUiPreferencesSection(containerEl: HTMLElement): void {
@@ -503,55 +539,11 @@ This is the final number after chunk aggregation:
     );
   }
 
-  private createChunkingConfigSection(containerEl: HTMLElement): void {
-    const chunkingConfigContainer = this.createCollapsibleSection(
-      containerEl,
-      'Chunking configuration'
-    );
-
-    const maxChunkSizeSetting = new Setting(chunkingConfigContainer).setName(
-      'Max chunk size'
-    );
-    this.renderMarkdownDesc(
-      maxChunkSizeSetting.descEl,
-      `Maximum tokens per chunk (recommended: \`512\`).
-- Larger values: more context per chunk, better for understanding broader topics.
-- Smaller values*: more granular chunks, better for precise keyword matching.`
-    );
-    maxChunkSizeSetting.addSlider(slider =>
-      slider
-        .setLimits(64, 2048, 64)
-        .setValue(this.configManager.get('maxChunkSize'))
-        .setDynamicTooltip()
-        .onChange(
-          async value => await this.configManager.set('maxChunkSize', value)
-        )
-    );
-
-    const chunkOverlapSetting = new Setting(chunkingConfigContainer).setName(
-      'Chunk overlap'
-    );
-    this.renderMarkdownDesc(
-      chunkOverlapSetting.descEl,
-      `Number of overlapping tokens between consecutive chunks (recommended: \`64\`, ~10% of chunk size).
-- Larger values: less context lost at chunk boundaries, but larger index size.
-- Smaller values: smaller index, but potentially fragmented context.`
-    );
-    chunkOverlapSetting.addSlider(slider =>
-      slider
-        .setLimits(0, 256, 8)
-        .setValue(this.configManager.get('chunkOverlap'))
-        .setDynamicTooltip()
-        .onChange(
-          async value => await this.configManager.set('chunkOverlap', value)
-        )
-    );
-  }
-
   private createLlamaCppConfigSection(containerEl: HTMLElement): void {
     const llamacppContainer = this.createCollapsibleSection(
       containerEl,
-      'llama.cpp configuration'
+      'llama.cpp configuration',
+      { subsection: true }
     );
 
     const llamacppServerPathSetting = new Setting(llamacppContainer).setName(
@@ -680,10 +672,10 @@ This is the final number after chunk aggregation:
     );
   }
 
-  private createBackendSelectionSection(containerEl: HTMLElement): void {
+  private createBackendConfigSection(containerEl: HTMLElement): void {
     const backendContainer = this.createCollapsibleSection(
       containerEl,
-      'Backend selection'
+      'Backend configuration'
     );
 
     const embeddingBackendSetting = new Setting(backendContainer).setName(
@@ -722,12 +714,17 @@ This is the final number after chunk aggregation:
           await this.configManager.set('rerankBackend', value as RerankBackend);
         })
     );
+
+    this.createLlamaCppConfigSection(backendContainer);
+    this.createDashScopeConfigSection(backendContainer);
+    this.createAudioConfigSection(backendContainer);
   }
 
   private createDashScopeConfigSection(containerEl: HTMLElement): void {
     const dsContainer = this.createCollapsibleSection(
       containerEl,
-      'DashScope configuration'
+      'DashScope configuration',
+      { subsection: true }
     );
 
     const apiKeySetting = new Setting(dsContainer).setName('API key');
@@ -1319,7 +1316,8 @@ Larger values increase recall but may add noise; smaller values focus on high-qu
   private createAudioConfigSection(containerEl: HTMLElement): void {
     const audioContainer = this.createCollapsibleSection(
       containerEl,
-      'Audio transcription configuration'
+      'Audio transcription configuration',
+      { subsection: true }
     );
 
     const whisperPathSetting = new Setting(audioContainer).setName(
