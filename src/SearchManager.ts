@@ -13,6 +13,11 @@ import type { Reranker, RerankDocument, RerankResult } from './Reranker';
 import { truncateTextToTokens } from './QueryProcessor';
 import { isImageExtension } from './fileFilters';
 
+function isImageFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop() ?? '';
+  return isImageExtension(ext);
+}
+
 /**
  * Chunk-level search result returned by BM25Search/EmbeddingSearch
  * Used as intermediate result before file-level aggregation
@@ -377,6 +382,17 @@ export class SearchManager extends WithLogging {
         )
       : await this.reranker.rerank(fittedQuery, documents, topK);
 
+    const reranked = rerankResults.map(r => ({
+      result: results[r.index],
+      score: r.relevanceScore,
+    }));
+    const textReranked = reranked.filter(r => !isImageFile(r.result.filePath));
+    const imageReranked = reranked.filter(r => isImageFile(r.result.filePath));
+    this.log(
+      `Doc rerank results: text=${textReranked.length} (top=${textReranked[0]?.score.toFixed(4) ?? '-'}), ` +
+        `image=${imageReranked.length} (top=${imageReranked[0]?.score.toFixed(4) ?? '-'})`
+    );
+
     // Normalize scores to [0, 1]
     const maxScore = Math.max(...rerankResults.map(r => r.relevanceScore));
     const minScore = Math.min(...rerankResults.map(r => r.relevanceScore));
@@ -478,6 +494,15 @@ export class SearchManager extends WithLogging {
     ]);
     const retrievalTimeMs = performance.now() - retrievalStart;
 
+    const imageChunkCount = embeddingChunks.filter(c =>
+      isImageFile(c.filePath)
+    ).length;
+    const textChunkCount = embeddingChunks.length - imageChunkCount;
+    this.log(
+      `Chunk rerank retrieval: text=${textChunkCount} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
+        `image=${imageChunkCount} chunks (embedding-only)`
+    );
+
     // Merge and deduplicate
     const mergedChunks = mergeAndDeduplicateChunks(embeddingChunks, bm25Chunks);
 
@@ -521,6 +546,13 @@ export class SearchManager extends WithLogging {
       ...mergedChunks[r.index],
       score: r.relevanceScore,
     }));
+
+    const rerankedText = rerankedChunks.filter(c => !isImageFile(c.filePath));
+    const rerankedImages = rerankedChunks.filter(c => isImageFile(c.filePath));
+    this.log(
+      `Chunk rerank results: text=${rerankedText.length} (top=${rerankedText[0]?.score.toFixed(4) ?? '-'}), ` +
+        `image=${rerankedImages.length} (top=${rerankedImages[0]?.score.toFixed(4) ?? '-'})`
+    );
 
     // Aggregate to file-level results
     const aggOptions = {
@@ -591,6 +623,10 @@ export class SearchManager extends WithLogging {
 
   /**
    * Hybrid search for content (aggregates chunk-level to file-level)
+   *
+   * Image and text chunks are retrieved separately:
+   * - Text chunks: RRF fusion of embedding + BM25
+   * - Image chunks: embedding-only (images have no BM25 content index)
    */
   private async hybridContentSearch(
     query: string,
@@ -611,6 +647,19 @@ export class SearchManager extends WithLogging {
         : Promise.resolve([]),
     ]);
 
+    // Separate image chunks from text chunks (images have no BM25 content)
+    const textEmbeddingChunks = embeddingChunks.filter(
+      c => !isImageFile(c.filePath)
+    );
+    const imageEmbeddingChunks = embeddingChunks.filter(c =>
+      isImageFile(c.filePath)
+    );
+
+    this.log(
+      `Content retrieval: text=${textEmbeddingChunks.length} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
+        `image=${imageEmbeddingChunks.length} chunks (embedding-only)`
+    );
+
     const aggOptions = {
       method: this.configManager.get('vectorAggMethod'),
       m: this.configManager.get('aggM'),
@@ -623,21 +672,40 @@ export class SearchManager extends WithLogging {
       method: this.configManager.get('bm25AggMethod'),
     };
 
-    const embeddingResults = aggregateChunksToFiles(
-      embeddingChunks,
+    // Text: RRF fusion of embedding + BM25
+    const textEmbeddingResults = aggregateChunksToFiles(
+      textEmbeddingChunks,
       aggOptions
     );
     const bm25Results = aggregateChunksToFiles(bm25Chunks, bm25AggOptions);
 
-    if (embeddingWeight === 0) return bm25Results;
-    if (bm25Weight === 0) return embeddingResults;
+    let textResults: SearchResult[];
+    if (embeddingWeight === 0) {
+      textResults = bm25Results;
+    } else if (bm25Weight === 0) {
+      textResults = textEmbeddingResults;
+    } else {
+      textResults = fuseFileResults(
+        textEmbeddingResults,
+        bm25Results,
+        embeddingWeight,
+        bm25Weight
+      );
+    }
 
-    return fuseFileResults(
-      embeddingResults,
-      bm25Results,
-      embeddingWeight,
-      bm25Weight
+    // Image: embedding-only (no RRF needed)
+    const imageResults = aggregateChunksToFiles(
+      imageEmbeddingChunks,
+      aggOptions
     );
+
+    if (imageResults.length === 0) return textResults;
+    if (textResults.length === 0) return imageResults;
+
+    // Merge text and image results by score
+    const merged = [...textResults, ...imageResults];
+    merged.sort((a, b) => b.score - a.score);
+    return merged;
   }
 
   /**
@@ -678,6 +746,14 @@ export class SearchManager extends WithLogging {
       }),
     ]);
 
+    const imageChunkCount = embeddingChunks.filter(c =>
+      isImageFile(c.filePath)
+    ).length;
+    this.log(
+      `RAG retrieval: text=${embeddingChunks.length - imageChunkCount} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
+        `image=${imageChunkCount} chunks (embedding-only)`
+    );
+
     const mergedChunks = mergeAndDeduplicateChunks(embeddingChunks, bm25Chunks);
     if (mergedChunks.length === 0) {
       return [];
@@ -701,10 +777,18 @@ export class SearchManager extends WithLogging {
         )
       : await this.reranker.rerank(fittedQuery, documents, maxChunks);
 
-    return rerankResults.map(r => ({
+    const rerankedResult = rerankResults.map(r => ({
       ...mergedChunks[r.index],
       score: r.relevanceScore,
     }));
+    const ragText = rerankedResult.filter(c => !isImageFile(c.filePath));
+    const ragImages = rerankedResult.filter(c => isImageFile(c.filePath));
+    this.log(
+      `RAG rerank results: text=${ragText.length} (top=${ragText[0]?.score.toFixed(4) ?? '-'}), ` +
+        `image=${ragImages.length} (top=${ragImages[0]?.score.toFixed(4) ?? '-'})`
+    );
+
+    return rerankedResult;
   }
 
   private async rerankWithMultimodal(
