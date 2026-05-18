@@ -28,6 +28,7 @@ import { truncateQuery, formatDuration } from '../utils';
 import RelatedNotesContent from './RelatedNotesContent.svelte';
 import type SonarPlugin from '../../main';
 import { isAudioExtension } from '../audio';
+import { isImageExtension } from '../fileFilters';
 
 export const RELATED_NOTES_VIEW_TYPE = 'related-notes-view';
 
@@ -529,9 +530,13 @@ export class RelatedNotesView extends ItemView {
       fromSelection: false,
     });
 
-    // Handle PDF and Audio files differently
+    // Handle non-markdown files via metadata-based search
     const ext = activeFile.extension;
-    if (ext === 'pdf' || (ext && isAudioExtension(ext))) {
+    if (
+      ext === 'pdf' ||
+      (ext && isAudioExtension(ext)) ||
+      (ext && isImageExtension(ext))
+    ) {
       await this.refreshFromMetadata(activeFile, searchAbortSignal);
       return;
     }
@@ -713,6 +718,9 @@ export class RelatedNotesView extends ItemView {
           // Fallback to first chunk from metadata
           query = chunks[0].content;
         }
+      } else if (file.extension && isImageExtension(file.extension)) {
+        // For images: use the file basename as query
+        query = file.basename;
       } else {
         // For Audio: use chunk closest to current playback position
         const currentTime = this.detectAudioCurrentTime();
