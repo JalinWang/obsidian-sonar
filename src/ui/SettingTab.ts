@@ -498,6 +498,38 @@ Supports:
         )
     );
 
+    const enableRelatedNotesRerankingSetting = new Setting(
+      uiPreferencesContainer
+    ).setName('Enable reranking in related notes');
+    this.renderMarkdownDesc(
+      enableRelatedNotesRerankingSetting.descEl,
+      'Re-score related notes results with a cross-encoder reranker for more accurate ranking. Requires a reranker model to be loaded.'
+    );
+    enableRelatedNotesRerankingSetting.addToggle(toggle =>
+      toggle
+        .setValue(this.configManager.get('enableRelatedNotesReranking'))
+        .onChange(
+          async value =>
+            await this.configManager.set('enableRelatedNotesReranking', value)
+        )
+    );
+
+    const enableSearchRerankingSetting = new Setting(
+      uiPreferencesContainer
+    ).setName('Enable reranking in search');
+    this.renderMarkdownDesc(
+      enableSearchRerankingSetting.descEl,
+      'Re-score search results with a cross-encoder reranker for more accurate ranking. Requires a reranker model to be loaded.'
+    );
+    enableSearchRerankingSetting.addToggle(toggle =>
+      toggle
+        .setValue(this.configManager.get('enableSearchReranking'))
+        .onChange(
+          async value =>
+            await this.configManager.set('enableSearchReranking', value)
+        )
+    );
+
     const searchResultsSetting = new Setting(uiPreferencesContainer).setName(
       'Search results count'
     );
