@@ -314,7 +314,7 @@ export class CragBenchmarkRunner extends WithLogging {
    * Create temporary IndexedDB and stores for a single question
    */
   private async createTempStores(questionId: string): Promise<TempStores> {
-    const dbName = getDBName(`crag-${questionId}`, 'benchmark');
+    const dbName = getDBName(`crag-${questionId}`, 'benchmark', 'benchmark');
     const sanitize = (str: string): string =>
       str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
     const zvecPath = `${this.vaultBasePath}/.obsidian/plugins/obsidian-sonar/zvec-bench/${sanitize(dbName)}`;
@@ -402,6 +402,7 @@ export class CragBenchmarkRunner extends WithLogging {
     // and then swap the db. This is a workaround for testing purposes.
     const dummyStore = await MetadataStore.initialize(
       'crag-temp',
+      'benchmark',
       'benchmark',
       this.configManager
     );

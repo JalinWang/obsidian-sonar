@@ -715,6 +715,7 @@ export class IndexManager extends WithLogging {
       if (imageFiles.length > 0) {
         this.log(`Embedding ${imageFiles.length} image files...`);
       }
+      let imageProcessed = 0;
       for (const data of imageFiles) {
         if (this.isCancelled) break;
         if (!data.imageBase64) continue;
@@ -738,6 +739,15 @@ export class IndexManager extends WithLogging {
           this.warn(`Failed to embed image ${data.file.path}: ${error}`);
           filesWithNaN.add(fileIndex);
           errorCount++;
+        }
+        imageProcessed++;
+        if (
+          imageFiles.length > 10 &&
+          (imageProcessed % 10 === 0 || imageProcessed === imageFiles.length)
+        ) {
+          this.log(
+            `Image embedding progress: ${imageProcessed}/${imageFiles.length}`
+          );
         }
       }
     }

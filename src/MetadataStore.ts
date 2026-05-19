@@ -32,15 +32,19 @@ export interface FailedFileMetadata {
 import type { ConfigManager } from './ConfigManager';
 import { WithLogging } from './WithLogging';
 
-export function getDBName(vaultName: string, modelIdentifier: string): string {
-  // Sanitize vault name and model name for use in DB name
+export function getDBName(
+  vaultName: string,
+  backend: string,
+  modelIdentifier: string
+): string {
   const sanitize = (str: string) =>
     str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
 
   const sanitizedVault = sanitize(vaultName);
+  const sanitizedBackend = sanitize(backend);
   const sanitizedModel = sanitize(modelIdentifier);
 
-  return `sonar/${sanitizedVault}/llamacpp/${sanitizedModel}`;
+  return `sonar/${sanitizedVault}/${sanitizedBackend}/${sanitizedModel}`;
 }
 export const DB_VERSION = 2;
 
@@ -67,10 +71,11 @@ export class MetadataStore extends WithLogging {
 
   static async initialize(
     vaultName: string,
+    backend: string,
     embeddingModel: string,
     configManager: ConfigManager
   ): Promise<MetadataStore> {
-    const dbName = getDBName(vaultName, embeddingModel);
+    const dbName = getDBName(vaultName, backend, embeddingModel);
     return new Promise((resolve, reject) => {
       const request = window.indexedDB.open(dbName, DB_VERSION);
 

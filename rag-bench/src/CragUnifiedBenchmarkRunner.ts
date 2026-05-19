@@ -659,7 +659,7 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
   }
 
   private async createStores(dbNamePrefix: string): Promise<Stores> {
-    const dbName = getDBName(dbNamePrefix, 'benchmark');
+    const dbName = getDBName(dbNamePrefix, 'benchmark', 'benchmark');
     const sanitize = (str: string): string =>
       str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
     const zvecPath = `${this.vaultBasePath}/.obsidian/plugins/obsidian-sonar/zvec-bench/${sanitize(dbName)}`;
@@ -707,7 +707,7 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
   }
 
   private async checkExistingDatabase(dbNamePrefix: string): Promise<number> {
-    const dbName = getDBName(dbNamePrefix, 'benchmark');
+    const dbName = getDBName(dbNamePrefix, 'benchmark', 'benchmark');
 
     return new Promise(resolve => {
       const request = window.indexedDB.open(dbName, DB_VERSION);
@@ -783,6 +783,7 @@ export class CragUnifiedBenchmarkRunner extends WithLogging {
   private async createMetadataStore(db: IDBDatabase): Promise<MetadataStore> {
     const dummyStore = await MetadataStore.initialize(
       'crag-unified-temp',
+      'benchmark',
       'benchmark',
       this.configManager
     );

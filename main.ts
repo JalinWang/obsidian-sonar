@@ -62,6 +62,26 @@ export default class SonarPlugin extends Plugin {
     this.configManager.getLogger().warn(`[Sonar.Plugin] ${msg}`);
   }
 
+  private getEmbedderModelIdentifier(): string {
+    const backend = this.configManager.get('embeddingBackend');
+    if (backend === 'dashscope') {
+      const model =
+        this.configManager.get('dashscopeEmbeddingModel') ||
+        DEFAULT_SETTINGS.dashscopeEmbeddingModel;
+      const dimension =
+        this.configManager.get('dashscopeEmbeddingDimension') ||
+        DEFAULT_SETTINGS.dashscopeEmbeddingDimension;
+      return `dashscope/${model}/${dimension}`;
+    }
+    const modelRepo =
+      this.configManager.get('llamaEmbedderModelRepo') ||
+      DEFAULT_SETTINGS.llamaEmbedderModelRepo;
+    const modelFile =
+      this.configManager.get('llamaEmbedderModelFile') ||
+      DEFAULT_SETTINGS.llamaEmbedderModelFile;
+    return `${modelRepo}/${modelFile}`;
+  }
+
   private formatStatusBarText(status: string): string {
     return `Sonar: ${status}`;
   }
@@ -421,6 +441,7 @@ export default class SonarPlugin extends Plugin {
     try {
       this.metadataStore = await MetadataStore.initialize(
         this.app.vault.getName(),
+        embeddingBackend,
         embedderModelIdentifier,
         this.configManager
       );
@@ -982,10 +1003,9 @@ export default class SonarPlugin extends Plugin {
 
     // Close current database connections if they're in the list to be deleted
     if (this.metadataStore) {
-      const modelRepo = this.configManager.get('llamaEmbedderModelRepo');
-      const modelFile = this.configManager.get('llamaEmbedderModelFile');
-      const modelIdentifier = `${modelRepo}/${modelFile}`;
-      const currentDbName = getDBName(vaultName, modelIdentifier);
+      const backend = this.configManager.get('embeddingBackend');
+      const modelIdentifier = this.getEmbedderModelIdentifier();
+      const currentDbName = getDBName(vaultName, backend, modelIdentifier);
 
       if (databases.includes(currentDbName)) {
         this.log(`Closing current database before deletion: ${currentDbName}`);
