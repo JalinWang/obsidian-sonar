@@ -11,10 +11,21 @@ import {
 } from './SearchManager';
 import { WithLogging } from './WithLogging';
 import { ChunkId } from './chunkId';
+import { isImageExtension } from './fileFilters';
 
 const ZVEC_TOPK_MULTIPLIER = 10;
 const ZVEC_TOPK_MINIMUM = 100;
 const LOG_TOP_N = 50;
+
+function matchesModality(
+  filePath: string,
+  options?: Pick<FullSearchOptions, 'modality'>
+): boolean {
+  if (!options?.modality) return true;
+  const ext = filePath.split('.').pop() ?? '';
+  const fileIsImage = isImageExtension(ext);
+  return options.modality === 'image' ? fileIsImage : !fileIsImage;
+}
 
 function cosineSimilarity(vec1: number[], vec2: number[]): number {
   let dot = 0;
@@ -218,6 +229,7 @@ export class EmbeddingSearch extends WithLogging {
       if (options?.excludeFilePath && meta.filePath === options.excludeFilePath)
         continue;
       if (!matchesFolderFilters(meta.filePath, options)) continue;
+      if (!matchesModality(meta.filePath, options)) continue;
       results.push({ id, score, metadata: meta });
     }
 
@@ -310,6 +322,7 @@ export class EmbeddingSearch extends WithLogging {
       if (options?.excludeFilePath && meta.filePath === options.excludeFilePath)
         continue;
       if (!matchesFolderFilters(meta.filePath, options)) continue;
+      if (!matchesModality(meta.filePath, options)) continue;
       results.push({ id, score, metadata: meta });
 
       if (

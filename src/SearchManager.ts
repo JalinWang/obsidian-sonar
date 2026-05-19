@@ -115,8 +115,11 @@ export interface SearchOptionsWithTopK extends SearchOptions {
   prependTitleToChunks?: boolean; // Prepend title to chunks for reranking (default: true)
 }
 
+export type Modality = 'text' | 'image';
+
 export interface FullSearchOptions extends SearchOptionsWithTopK {
   retrievalLimit: number; // Number of chunks to compare (before file level aggregation)
+  modality?: Modality; // Filter results by modality (text or image)
 }
 
 /**
@@ -517,34 +520,40 @@ export class SearchManager extends WithLogging {
     );
     const bm25Limit = Math.round((retrievalLimit * bm25Weight) / totalWeight);
 
-    // Get content chunks from both sources
+    // Get content chunks: text and image retrieved separately
     const retrievalStart = performance.now();
-    const [embeddingChunks, bm25Chunks] = await Promise.all([
-      embeddingWeight > 0
-        ? this.embeddingSearch.searchContent(query, {
-            ...options,
-            retrievalLimit: embeddingLimit,
-          })
-        : Promise.resolve([]),
-      bm25Weight > 0
-        ? this.bm25Search.searchContent(query, {
-            ...options,
-            retrievalLimit: bm25Limit,
-          })
-        : Promise.resolve([]),
-    ]);
+    const [textEmbeddingChunks, imageEmbeddingChunks, bm25Chunks] =
+      await Promise.all([
+        embeddingWeight > 0
+          ? this.embeddingSearch.searchContent(query, {
+              ...options,
+              retrievalLimit: embeddingLimit,
+              modality: 'text',
+            })
+          : Promise.resolve([]),
+        embeddingWeight > 0
+          ? this.embeddingSearch.searchContent(query, {
+              ...options,
+              retrievalLimit: embeddingLimit,
+              modality: 'image',
+            })
+          : Promise.resolve([]),
+        bm25Weight > 0
+          ? this.bm25Search.searchContent(query, {
+              ...options,
+              retrievalLimit: bm25Limit,
+            })
+          : Promise.resolve([]),
+      ]);
     const retrievalTimeMs = performance.now() - retrievalStart;
 
-    const imageChunkCount = embeddingChunks.filter(c =>
-      isImageFile(c.filePath)
-    ).length;
-    const textChunkCount = embeddingChunks.length - imageChunkCount;
     this.log(
-      `Chunk rerank retrieval: text=${textChunkCount} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
-        `image=${imageChunkCount} chunks (embedding-only)`
+      `Chunk rerank retrieval: text=${textEmbeddingChunks.length} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
+        `image=${imageEmbeddingChunks.length} chunks (embedding-only)`
     );
 
     // Merge and deduplicate
+    const embeddingChunks = [...textEmbeddingChunks, ...imageEmbeddingChunks];
     const mergedChunks = mergeAndDeduplicateChunks(embeddingChunks, bm25Chunks);
 
     if (mergedChunks.length === 0) {
@@ -679,27 +688,33 @@ export class SearchManager extends WithLogging {
     const retrievalLimit = options.topK * retrievalMultiplier;
     const fullOptions = { ...options, retrievalLimit };
 
-    const [embeddingChunks, bm25Chunks] = await Promise.all([
-      embeddingWeight > 0
-        ? this.embeddingSearch.searchContent(query, fullOptions)
-        : Promise.resolve([]),
-      bm25Weight > 0
-        ? this.bm25Search.searchContent(query, fullOptions)
-        : Promise.resolve([]),
-    ]);
-
-    // Separate image chunks from text chunks (images have no BM25 content)
-    const textEmbeddingChunks = embeddingChunks.filter(
-      c => !isImageFile(c.filePath)
-    );
-    const imageEmbeddingChunks = embeddingChunks.filter(c =>
-      isImageFile(c.filePath)
-    );
+    // Two separate retrievals: text-only and image-only
+    const [textEmbeddingChunks, imageEmbeddingChunks, bm25Chunks] =
+      await Promise.all([
+        embeddingWeight > 0
+          ? this.embeddingSearch.searchContent(query, {
+              ...fullOptions,
+              modality: 'text',
+            })
+          : Promise.resolve([]),
+        embeddingWeight > 0
+          ? this.embeddingSearch.searchContent(query, {
+              ...fullOptions,
+              modality: 'image',
+            })
+          : Promise.resolve([]),
+        bm25Weight > 0
+          ? this.bm25Search.searchContent(query, fullOptions)
+          : Promise.resolve([]),
+      ]);
 
     this.log(
       `Content retrieval: text=${textEmbeddingChunks.length} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
         `image=${imageEmbeddingChunks.length} chunks (embedding-only)`
     );
+    this.logChunkTopResults('text embedding', textEmbeddingChunks);
+    this.logChunkTopResults('BM25', bm25Chunks);
+    this.logChunkTopResults('image embedding', imageEmbeddingChunks);
 
     const aggOptions = {
       method: this.configManager.get('vectorAggMethod'),
@@ -774,27 +789,33 @@ export class SearchManager extends WithLogging {
     const embeddingLimit = Math.ceil(retrievalLimit * 0.6);
     const bm25Limit = Math.ceil(retrievalLimit * 0.4);
 
-    const [embeddingChunks, bm25Chunks] = await Promise.all([
-      this.embeddingSearch.searchContent(query, {
-        topK: maxChunks,
-        retrievalLimit: embeddingLimit,
-        excludeFolderPath,
-      }),
-      this.bm25Search.searchContent(query, {
-        topK: maxChunks,
-        retrievalLimit: bm25Limit,
-        excludeFolderPath,
-      }),
-    ]);
+    const [textEmbeddingChunks, imageEmbeddingChunks, bm25Chunks] =
+      await Promise.all([
+        this.embeddingSearch.searchContent(query, {
+          topK: maxChunks,
+          retrievalLimit: embeddingLimit,
+          excludeFolderPath,
+          modality: 'text',
+        }),
+        this.embeddingSearch.searchContent(query, {
+          topK: maxChunks,
+          retrievalLimit: embeddingLimit,
+          excludeFolderPath,
+          modality: 'image',
+        }),
+        this.bm25Search.searchContent(query, {
+          topK: maxChunks,
+          retrievalLimit: bm25Limit,
+          excludeFolderPath,
+        }),
+      ]);
 
-    const imageChunkCount = embeddingChunks.filter(c =>
-      isImageFile(c.filePath)
-    ).length;
     this.log(
-      `RAG retrieval: text=${embeddingChunks.length - imageChunkCount} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
-        `image=${imageChunkCount} chunks (embedding-only)`
+      `RAG retrieval: text=${textEmbeddingChunks.length} chunks (embedding) + ${bm25Chunks.length} chunks (BM25), ` +
+        `image=${imageEmbeddingChunks.length} chunks (embedding-only)`
     );
 
+    const embeddingChunks = [...textEmbeddingChunks, ...imageEmbeddingChunks];
     const mergedChunks = mergeAndDeduplicateChunks(embeddingChunks, bm25Chunks);
     if (mergedChunks.length === 0) {
       return [];
@@ -854,6 +875,14 @@ export class SearchManager extends WithLogging {
    * Cancel all pending requests from a component.
    * Use this when a component is being destroyed (e.g., modal closing).
    */
+  private logChunkTopResults(label: string, chunks: ChunkResult[]): void {
+    if (chunks.length === 0) return;
+    const sorted = [...chunks].sort((a, b) => b.score - a.score);
+    const top = sorted.slice(0, 10);
+    const lines = top.map(c => `  ${c.score.toFixed(4)}  ${c.chunkId}`);
+    this.log(`${label} top chunks:\n${lines.join('\n')}`);
+  }
+
   cancelPendingRequests(componentId: string): void {
     const newSearchQueue: QueuedSearchRequest[] = [];
     for (const request of this.searchQueue) {
