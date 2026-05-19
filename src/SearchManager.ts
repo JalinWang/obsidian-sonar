@@ -436,6 +436,15 @@ export class SearchManager extends WithLogging {
       `Doc rerank results: text=${textReranked.length} (top=${textReranked[0]?.score.toFixed(4) ?? '-'}), ` +
         `image=${imageReranked.length} (top=${imageReranked[0]?.score.toFixed(4) ?? '-'})`
     );
+    this.log(
+      `Doc rerank details:\n` +
+        reranked
+          .map(
+            r =>
+              `  ${r.score.toFixed(4)}  ${r.result.filePath} (${isImageFile(r.result.filePath) ? 'image' : 'text'})`
+          )
+          .join('\n')
+    );
 
     // Normalize scores to [0, 1]
     const maxScore = Math.max(...rerankResults.map(r => r.relevanceScore));

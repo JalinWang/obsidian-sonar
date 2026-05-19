@@ -199,7 +199,12 @@ export class EmbeddingSearch extends WithLogging {
       (options.retrievalLimit ?? 20) * ZVEC_TOPK_MULTIPLIER,
       ZVEC_TOPK_MINIMUM
     );
-    const rawResults = this.zvecStore.search(queryEmbedding, topk, type);
+    const rawResults = this.zvecStore.search(
+      queryEmbedding,
+      topk,
+      type,
+      options.modality
+    );
 
     const allChunks = await this.metadataStore.getAllChunks();
 

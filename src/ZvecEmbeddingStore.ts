@@ -2,6 +2,7 @@ import type { ZVecCollection } from '@zvec/zvec';
 import type { ConfigManager } from './ConfigManager';
 import { WithLogging } from './WithLogging';
 import { ChunkId } from './chunkId';
+import { isImageExtension } from './fileFilters';
 import { createHash } from 'crypto';
 import * as path from 'path';
 
@@ -163,6 +164,11 @@ function buildSchema(dimension: number): object {
         dataType: b.DataType.STRING,
         indexParams: { indexType: b.IndexType.INVERT },
       },
+      {
+        name: 'modality',
+        dataType: b.DataType.STRING,
+        indexParams: { indexType: b.IndexType.INVERT },
+      },
     ],
     vectors: [
       {
@@ -176,6 +182,11 @@ function buildSchema(dimension: number): object {
       },
     ],
   });
+}
+
+function deriveModality(filePath: string): 'text' | 'image' {
+  const ext = filePath.split('.').pop() ?? '';
+  return isImageExtension(ext) ? 'image' : 'text';
 }
 
 export class ZvecEmbeddingStore extends WithLogging {
@@ -202,13 +213,11 @@ export class ZvecEmbeddingStore extends WithLogging {
     try {
       collection = binding.open(collectionPath);
 
-      // Detect v1 collections that lack the `chunkId` field and recreate them.
-      // v1 stored chunk IDs directly as zvec doc PKs, which broke for paths
-      // containing '/' or longer than 64 characters.
-      const hasChunkId = collection.schema
-        .fields()
-        .some(f => f.name === 'chunkId');
-      if (!hasChunkId) {
+      // Detect collections with outdated schemas and recreate them.
+      const fields = collection.schema.fields();
+      const hasChunkId = fields.some(f => f.name === 'chunkId');
+      const hasModality = fields.some(f => f.name === 'modality');
+      if (!hasChunkId || !hasModality) {
         collection.destroySync();
         const schema = buildSchema(dimension);
         collection = binding.createAndOpen(collectionPath, schema);
@@ -256,6 +265,7 @@ export class ZvecEmbeddingStore extends WithLogging {
         chunkId: item.id,
         filePath: item.filePath,
         chunkType: item.chunkType,
+        modality: deriveModality(item.filePath),
       },
     }));
 
@@ -282,9 +292,14 @@ export class ZvecEmbeddingStore extends WithLogging {
   search(
     queryVector: number[],
     topk: number,
-    chunkType?: 'title' | 'content'
+    chunkType?: 'title' | 'content',
+    modality?: 'text' | 'image'
   ): Array<{ id: string; score: number }> {
-    const filter = chunkType ? `chunkType = '${chunkType}'` : undefined;
+    const conditions: string[] = [];
+    if (chunkType) conditions.push(`chunkType = '${chunkType}'`);
+    if (modality) conditions.push(`modality = '${modality}'`);
+    const filter = conditions.length > 0 ? conditions.join(' AND ') : undefined;
+
     const results = this.collection.querySync({
       fieldName: VECTOR_FIELD,
       vector: queryVector,
