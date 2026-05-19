@@ -95,6 +95,11 @@ export class DashScopeReranker extends WithLogging implements Reranker {
     if (this._status !== 'ready') {
       throw new Error('Reranker not initialized. Call initialize() first.');
     }
+    // this.log("rerankMultimodal: \n" +
+    //   JSON.stringify({
+    //     input: { query, documents },
+    //   })
+    // );
     return dashscopeMultimodalRerank(
       this.baseUrl,
       this.apiKey,

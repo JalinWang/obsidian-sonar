@@ -326,13 +326,14 @@ export class SearchManager extends WithLogging {
         : Promise.resolve([]),
     ]);
 
+    const retrievalMultiplier = this.configManager.get('retrievalMultiplier');
     // Combine title and content results
     return combineSearchResults(
       titleResults,
       contentResults,
       titleWeight,
       contentWeight,
-      options.topK
+      options.topK * retrievalMultiplier
     );
   }
 
