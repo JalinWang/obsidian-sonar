@@ -183,6 +183,10 @@ export class SearchManager extends WithLogging {
     this.log('Initialized');
   }
 
+  async getEmbedding(chunkId: string): Promise<number[] | null> {
+    return this.embeddingSearch.getEmbedding(chunkId);
+  }
+
   /**
    * Search with queue management for handling concurrent requests.
    *
@@ -240,6 +244,43 @@ export class SearchManager extends WithLogging {
 
     this.isProcessingSearch = false;
     this.processSearchQueue();
+  }
+
+  /**
+   * Vector-only search using a pre-computed embedding.
+   * Used when the source is non-textual (e.g., an image) and we already
+   * have its embedding vector.
+   */
+  async searchByVector(
+    queryEmbedding: number[],
+    options: SearchOptionsWithTopK
+  ): Promise<SearchResult[]> {
+    const retrievalMultiplier = this.configManager.get('retrievalMultiplier');
+    const retrievalLimit = options.topK * retrievalMultiplier;
+    const fullOptions = { ...options, retrievalLimit };
+
+    const embeddingChunks = await this.embeddingSearch.searchContentByVector(
+      queryEmbedding,
+      fullOptions
+    );
+
+    const textChunks = embeddingChunks.filter(c => !isImageFile(c.filePath));
+    const imageChunks = embeddingChunks.filter(c => isImageFile(c.filePath));
+    this.log(
+      `Vector search: text=${textChunks.length} chunks, image=${imageChunks.length} chunks`
+    );
+
+    const aggOptions = {
+      method: this.configManager.get('vectorAggMethod'),
+      m: this.configManager.get('aggM'),
+      l: this.configManager.get('aggL'),
+      decay: this.configManager.get('aggDecay'),
+      rrfK: this.configManager.get('aggRrfK'),
+    };
+
+    const results = aggregateChunksToFiles(embeddingChunks, aggOptions);
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, options.topK);
   }
 
   /**

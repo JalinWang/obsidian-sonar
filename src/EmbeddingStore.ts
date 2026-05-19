@@ -85,6 +85,24 @@ export class EmbeddingStore extends WithLogging {
     this.embeddingsCache = null;
   }
 
+  async getEmbedding(id: string): Promise<number[] | null> {
+    if (this.embeddingsCache) {
+      const found = this.embeddingsCache.find(e => e.id === id);
+      return found?.embedding ?? null;
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([STORE_EMBEDDINGS], 'readonly');
+      const store = transaction.objectStore(STORE_EMBEDDINGS);
+      const request = store.get(id);
+      request.onsuccess = () => {
+        const data = request.result as EmbeddingData | undefined;
+        resolve(data?.embedding ?? null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   async getAllEmbeddings(): Promise<EmbeddingData[]> {
     if (this.embeddingsCache) {
       return this.embeddingsCache;

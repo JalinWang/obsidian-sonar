@@ -14,7 +14,7 @@ import { ChunkId } from './chunkId';
 
 const ZVEC_TOPK_MULTIPLIER = 10;
 const ZVEC_TOPK_MINIMUM = 100;
-const LOG_TOP_N = 20;
+const LOG_TOP_N = 50;
 
 function cosineSimilarity(vec1: number[], vec2: number[]): number {
   let dot = 0;
@@ -53,6 +53,10 @@ export class EmbeddingSearch extends WithLogging {
     this.log('Initialized');
   }
 
+  async getEmbedding(chunkId: string): Promise<number[] | null> {
+    return this.idbEmbeddingStore.getEmbedding(chunkId);
+  }
+
   async searchTitle(
     query: string,
     options: FullSearchOptions
@@ -78,8 +82,26 @@ export class EmbeddingSearch extends WithLogging {
     options: FullSearchOptions
   ): Promise<ChunkResult[]> {
     const scored = await this.searchChunks(query, 'content', options);
+    return this.toChunkResults(scored, options.retrievalLimit);
+  }
 
-    return scored.slice(0, options.retrievalLimit).map(result => ({
+  async searchContentByVector(
+    queryEmbedding: number[],
+    options: FullSearchOptions
+  ): Promise<ChunkResult[]> {
+    const scored = await this.searchChunksByVector(
+      queryEmbedding,
+      'content',
+      options
+    );
+    return this.toChunkResults(scored, options.retrievalLimit);
+  }
+
+  private toChunkResults(
+    scored: Array<{ id: string; score: number; metadata: ChunkMetadata }>,
+    retrievalLimit?: number
+  ): ChunkResult[] {
+    return scored.slice(0, retrievalLimit).map(result => ({
       chunkId: result.id,
       filePath: result.metadata.filePath,
       chunkIndex: ChunkId.getChunkIndex(result.id),
@@ -101,6 +123,18 @@ export class EmbeddingSearch extends WithLogging {
     return this.searchChunksZvec(query, type, options);
   }
 
+  private async searchChunksByVector(
+    queryEmbedding: number[],
+    type: 'title' | 'content',
+    options: FullSearchOptions
+  ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
+    const mode = this.configManager.get('vectorSearchMode');
+    if (mode === 'bf') {
+      return this.searchChunksBFByVector(queryEmbedding, type, options);
+    }
+    return this.searchChunksZvecByVector(queryEmbedding, type, options);
+  }
+
   // ---------------------------------------------------------------------------
   // zvec ANN backend
   // ---------------------------------------------------------------------------
@@ -111,20 +145,52 @@ export class EmbeddingSearch extends WithLogging {
     options: FullSearchOptions
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
     const t0 = Date.now();
-
     const queryEmbeddings = await this.embedder.getEmbeddings([query]);
     const queryEmbedding = queryEmbeddings[0];
     const tEmbed = Date.now();
 
+    const results = await this.searchZvecByVector(
+      queryEmbedding,
+      type,
+      options
+    );
+    const tTotal = Date.now();
+
+    this.log(
+      `[zvec] query="${query}" type=${type} embed=${tEmbed - t0}ms search=${tTotal - tEmbed}ms total=${tTotal - t0}ms`
+    );
+    return results;
+  }
+
+  private async searchChunksZvecByVector(
+    queryEmbedding: number[],
+    type: 'title' | 'content',
+    options: FullSearchOptions
+  ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
+    const t0 = Date.now();
+    const results = await this.searchZvecByVector(
+      queryEmbedding,
+      type,
+      options
+    );
+    const tTotal = Date.now();
+
+    this.log(`[zvec] vector search type=${type} search=${tTotal - t0}ms`);
+    return results;
+  }
+
+  private async searchZvecByVector(
+    queryEmbedding: number[],
+    type: 'title' | 'content',
+    options: FullSearchOptions
+  ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
     const topk = Math.max(
       (options.retrievalLimit ?? 20) * ZVEC_TOPK_MULTIPLIER,
       ZVEC_TOPK_MINIMUM
     );
     const rawResults = this.zvecStore.search(queryEmbedding, topk, type);
-    const tAnn = Date.now();
 
     const allChunks = await this.metadataStore.getAllChunks();
-    const tMeta = Date.now();
 
     const metadataById = new Map<string, ChunkMetadata>();
     const metadataByFilePath = new Map<string, ChunkMetadata>();
@@ -154,14 +220,8 @@ export class EmbeddingSearch extends WithLogging {
       if (!matchesFolderFilters(meta.filePath, options)) continue;
       results.push({ id, score, metadata: meta });
     }
-    const tTotal = Date.now();
 
-    this.log(
-      `[zvec] query="${query}" type=${type} topk=${topk} raw_hits=${rawResults.length} results=${results.length} | ` +
-        `embed=${tEmbed - t0}ms ann=${tAnn - tEmbed}ms meta=${tMeta - tAnn}ms filter=${tTotal - tMeta}ms total=${tTotal - t0}ms`
-    );
     this.logTopResults('[zvec]', rawResults.slice(0, LOG_TOP_N));
-
     return results;
   }
 
@@ -175,16 +235,41 @@ export class EmbeddingSearch extends WithLogging {
     options: FullSearchOptions
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
     const t0 = Date.now();
-
     const queryEmbeddings = await this.embedder.getEmbeddings([query]);
     const queryEmbedding = queryEmbeddings[0];
     const tEmbed = Date.now();
 
+    const results = await this.searchBFByVector(queryEmbedding, type, options);
+    const tTotal = Date.now();
+
+    this.log(
+      `[bf] query="${query}" type=${type} embed=${tEmbed - t0}ms search=${tTotal - tEmbed}ms total=${tTotal - t0}ms`
+    );
+    return results;
+  }
+
+  private async searchChunksBFByVector(
+    queryEmbedding: number[],
+    type: 'title' | 'content',
+    options: FullSearchOptions
+  ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
+    const t0 = Date.now();
+    const results = await this.searchBFByVector(queryEmbedding, type, options);
+    const tTotal = Date.now();
+
+    this.log(`[bf] vector search type=${type} search=${tTotal - t0}ms`);
+    return results;
+  }
+
+  private async searchBFByVector(
+    queryEmbedding: number[],
+    type: 'title' | 'content',
+    options: FullSearchOptions
+  ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
     const [allEmbeddings, allChunks] = await Promise.all([
       this.idbEmbeddingStore.getAllEmbeddings(),
       this.metadataStore.getAllChunks(),
     ]);
-    const tLoad = Date.now();
 
     const metadataById = new Map<string, ChunkMetadata>();
     const metadataByFilePath = new Map<string, ChunkMetadata>();
@@ -196,7 +281,6 @@ export class EmbeddingSearch extends WithLogging {
     }
 
     const filtered = allEmbeddings.filter(emb => {
-      // Skip sentinel records and any entry with no embedding vector.
       if (emb.embedding.length === 0) return false;
       const isTitle = ChunkId.isTitle(emb.id);
       return type === 'title' ? isTitle : !isTitle;
@@ -208,7 +292,6 @@ export class EmbeddingSearch extends WithLogging {
         score: cosineSimilarity(queryEmbedding, emb.embedding),
       }))
       .sort((a, b) => b.score - a.score);
-    const tScored = Date.now();
 
     const results: Array<{
       id: string;
@@ -236,14 +319,8 @@ export class EmbeddingSearch extends WithLogging {
         break;
       }
     }
-    const tTotal = Date.now();
 
-    this.log(
-      `[bf] query="${query}" type=${type} candidates=${filtered.length} results=${results.length} | ` +
-        `embed=${tEmbed - t0}ms load=${tLoad - tEmbed}ms cosine+sort=${tScored - tLoad}ms filter=${tTotal - tScored}ms total=${tTotal - t0}ms`
-    );
     this.logTopResults('[bf]', scored.slice(0, LOG_TOP_N));
-
     return results;
   }
 

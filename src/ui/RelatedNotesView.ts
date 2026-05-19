@@ -29,6 +29,7 @@ import RelatedNotesContent from './RelatedNotesContent.svelte';
 import type SonarPlugin from '../../main';
 import { isAudioExtension } from '../audio';
 import { isImageExtension } from '../fileFilters';
+import { ChunkId } from '../chunkId';
 
 export const RELATED_NOTES_VIEW_TYPE = 'related-notes-view';
 
@@ -530,13 +531,13 @@ export class RelatedNotesView extends ItemView {
       fromSelection: false,
     });
 
-    // Handle non-markdown files via metadata-based search
+    // Handle non-markdown files differently
     const ext = activeFile.extension;
-    if (
-      ext === 'pdf' ||
-      (ext && isAudioExtension(ext)) ||
-      (ext && isImageExtension(ext))
-    ) {
+    if (ext && isImageExtension(ext)) {
+      await this.refreshFromImageEmbedding(activeFile, searchAbortSignal);
+      return;
+    }
+    if (ext === 'pdf' || (ext && isAudioExtension(ext))) {
       await this.refreshFromMetadata(activeFile, searchAbortSignal);
       return;
     }
@@ -718,9 +719,6 @@ export class RelatedNotesView extends ItemView {
           // Fallback to first chunk from metadata
           query = chunks[0].content;
         }
-      } else if (file.extension && isImageExtension(file.extension)) {
-        // For images: use the file basename as query
-        query = file.basename;
       } else {
         // For Audio: use chunk closest to current playback position
         const currentTime = this.detectAudioCurrentTime();
@@ -840,6 +838,116 @@ export class RelatedNotesView extends ItemView {
         return;
       }
       this.logger.error(`Error refreshing related notes from metadata: ${err}`);
+      this.updateStore({
+        ...EMPTY_STATE_BASE,
+        status: 'error',
+        activeFile: file.path,
+      });
+    }
+  }
+
+  private async refreshFromImageEmbedding(
+    file: TFile,
+    abortSignal: AbortSignal
+  ): Promise<void> {
+    if (!this.plugin.searchManager) {
+      return;
+    }
+
+    const chunkId = ChunkId.forContent(file.path, 0);
+    const embedding = await this.plugin.searchManager.getEmbedding(chunkId);
+
+    if (!embedding) {
+      this.updateStore({
+        ...EMPTY_STATE_BASE,
+        status: 'no-content',
+        activeFile: file.path,
+      });
+      return;
+    }
+
+    const queryLabel = truncateQuery(file.basename);
+
+    if (file.path === this.lastQuery) {
+      this.updateStore({ status: 'ready' });
+      return;
+    }
+    this.lastQuery = file.path;
+
+    try {
+      const searchStart = performance.now();
+      const searchResults = await this.plugin.searchManager.searchByVector(
+        embedding,
+        {
+          topK: this.configManager.get('searchResultsCount'),
+          excludeFilePath: file.path,
+        }
+      );
+      const searchTime = performance.now() - searchStart;
+
+      if (abortSignal.aborted) {
+        return;
+      }
+
+      this.logger.log(
+        `Searched image ${queryLabel} by embedding in ${formatDuration(searchTime)}`
+      );
+
+      const enableReranking = this.configManager.get(
+        'enableRelatedNotesReranking'
+      );
+      const topK = this.configManager.get('searchResultsCount');
+
+      if (enableReranking && this.plugin.searchManager) {
+        this.updateStore({
+          query: file.basename,
+          results: searchResults,
+          tokenCount: 0,
+          status: 'ready',
+          activeFile: file.path,
+          isReranking: true,
+        });
+
+        const rerankStart = performance.now();
+        const rerankedResults = await this.plugin.searchManager.rerank(
+          COMPONENT_ID,
+          file.basename,
+          searchResults,
+          topK
+        );
+        const rerankTime = performance.now() - rerankStart;
+
+        if (abortSignal.aborted) {
+          return;
+        }
+
+        if (rerankedResults) {
+          this.logger.log(
+            `Reranked image ${queryLabel} in ${formatDuration(rerankTime)}`
+          );
+          this.updateStore({
+            results: rerankedResults,
+            isReranking: false,
+          });
+        } else {
+          this.updateStore({ isReranking: false });
+        }
+      } else {
+        this.updateStore({
+          query: file.basename,
+          results: searchResults,
+          tokenCount: 0,
+          status: 'ready',
+          activeFile: file.path,
+        });
+      }
+    } catch (err) {
+      if (abortSignal.aborted) {
+        return;
+      }
+      this.logger.error(
+        `Error refreshing related notes from image embedding: ${err}`
+      );
       this.updateStore({
         ...EMPTY_STATE_BASE,
         status: 'error',
