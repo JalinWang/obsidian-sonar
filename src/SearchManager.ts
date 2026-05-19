@@ -327,14 +327,53 @@ export class SearchManager extends WithLogging {
     ]);
 
     const retrievalMultiplier = this.configManager.get('retrievalMultiplier');
-    // Combine title and content results
-    return combineSearchResults(
+    const limit = options.topK * retrievalMultiplier;
+
+    const combined = combineSearchResults(
       titleResults,
       contentResults,
       titleWeight,
       contentWeight,
-      options.topK * retrievalMultiplier
+      limit
     );
+
+    return this.ensureImageRepresentation(combined, contentResults, limit);
+  }
+
+  /**
+   * Ensure image results are included in the candidate pool for reranking.
+   * Cross-modal embedding scores (text→image) are inherently lower than
+   * text→text scores, so images would otherwise be excluded by the score
+   * cutoff. Reserve up to 30% of slots for the top image results.
+   */
+  private ensureImageRepresentation(
+    combined: SearchResult[],
+    contentResults: SearchResult[],
+    limit: number
+  ): SearchResult[] {
+    const imageCount = combined.filter(r => isImageFile(r.filePath)).length;
+    const maxImageSlots = Math.ceil(limit * 0.3);
+    if (imageCount >= maxImageSlots) return combined;
+
+    const includedPaths = new Set(combined.map(r => r.filePath));
+    const topImages = contentResults
+      .filter(r => isImageFile(r.filePath) && !includedPaths.has(r.filePath))
+      .slice(0, maxImageSlots - imageCount);
+
+    if (topImages.length === 0) return combined;
+
+    // Replace lowest-scoring text results with top image candidates
+    const textResults = combined.filter(r => !isImageFile(r.filePath));
+    const existingImages = combined.filter(r => isImageFile(r.filePath));
+    const textSlots = limit - existingImages.length - topImages.length;
+
+    const result = [
+      ...textResults.slice(0, textSlots),
+      ...existingImages,
+      ...topImages,
+    ];
+    result.sort((a, b) => b.score - a.score);
+    return result;
   }
 
   /**
