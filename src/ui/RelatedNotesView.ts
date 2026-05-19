@@ -504,6 +504,11 @@ export class RelatedNotesView extends ItemView {
       return;
     }
 
+    if (this.searchAbortController) {
+      this.searchAbortController.abort();
+      this.searchAbortController = null;
+    }
+
     // Search not ready yet - UI state is handled by sonarState in Svelte
     if (!this.plugin.searchManager || !this.plugin.embedder) {
       return;
@@ -518,32 +523,22 @@ export class RelatedNotesView extends ItemView {
       return;
     }
 
+    this.searchAbortController = new AbortController();
+    const searchAbortSignal = this.searchAbortController.signal;
+
+    this.updateStore({
+      status: 'processing',
+      fromSelection: false,
+    });
+
     // Handle non-markdown files differently
     const ext = activeFile.extension;
     if (ext && isImageExtension(ext)) {
-      if (this.searchAbortController) {
-        this.searchAbortController.abort();
-        this.searchAbortController = null;
-      }
-      this.searchAbortController = new AbortController();
-      this.updateStore({ status: 'processing', fromSelection: false });
-      await this.refreshFromImageEmbedding(
-        activeFile,
-        this.searchAbortController.signal
-      );
+      await this.refreshFromImageEmbedding(activeFile, searchAbortSignal);
       return;
     }
     if (ext === 'pdf' || (ext && isAudioExtension(ext))) {
-      if (this.searchAbortController) {
-        this.searchAbortController.abort();
-        this.searchAbortController = null;
-      }
-      this.searchAbortController = new AbortController();
-      this.updateStore({ status: 'processing', fromSelection: false });
-      await this.refreshFromMetadata(
-        activeFile,
-        this.searchAbortController.signal
-      );
+      await this.refreshFromMetadata(activeFile, searchAbortSignal);
       return;
     }
 
@@ -591,15 +586,6 @@ export class RelatedNotesView extends ItemView {
         return;
       }
 
-      // Query changed — now abort the previous in-flight operation
-      if (this.searchAbortController) {
-        this.searchAbortController.abort();
-        this.searchAbortController = null;
-      }
-      this.searchAbortController = new AbortController();
-      const searchAbortSignal = this.searchAbortController.signal;
-
-      this.updateStore({ status: 'processing', fromSelection: false });
       this.lastQuery = query;
 
       if (query) {
@@ -686,7 +672,7 @@ export class RelatedNotesView extends ItemView {
         });
       }
     } catch (err) {
-      if (this.searchAbortController?.signal.aborted) {
+      if (searchAbortSignal.aborted) {
         return;
       }
       this.lastQuery = '';
