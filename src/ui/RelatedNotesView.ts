@@ -675,6 +675,7 @@ export class RelatedNotesView extends ItemView {
       if (searchAbortSignal.aborted) {
         return;
       }
+      this.lastQuery = '';
       this.logger.error(`Error refreshing related notes: ${err}`);
       new Notice('Failed to retrieve related notes');
       this.updateStore({
@@ -837,6 +838,7 @@ export class RelatedNotesView extends ItemView {
       if (abortSignal.aborted) {
         return;
       }
+      this.lastQuery = '';
       this.logger.error(`Error refreshing related notes from metadata: ${err}`);
       this.updateStore({
         ...EMPTY_STATE_BASE,
@@ -945,6 +947,7 @@ export class RelatedNotesView extends ItemView {
       if (abortSignal.aborted) {
         return;
       }
+      this.lastQuery = '';
       this.logger.error(
         `Error refreshing related notes from image embedding: ${err}`
       );
