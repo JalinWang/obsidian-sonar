@@ -313,6 +313,13 @@ export class IndexManager extends WithLogging {
 
     const operations: FileOperation[] = [];
     let skippedCount = 0;
+    let missingImageEmbeddingCount = 0;
+
+    const existingEmbeddingIds = this.embedder.getImageEmbedding
+      ? new Set(
+          (await this.idbEmbeddingStore.getAllEmbeddings()).map(e => e.id)
+        )
+      : null;
 
     for (const file of vaultFiles) {
       const meta = dbFileMap.get(file.path);
@@ -343,6 +350,14 @@ export class IndexManager extends WithLogging {
           type: meta ? 'modify' : 'create',
           file,
         });
+      } else if (
+        existingEmbeddingIds &&
+        file.extension &&
+        isImageExtension(file.extension) &&
+        !existingEmbeddingIds.has(ChunkId.forContent(file.path, 0))
+      ) {
+        operations.push({ type: 'modify', file });
+        missingImageEmbeddingCount++;
       } else {
         skippedCount++;
       }
@@ -365,6 +380,11 @@ export class IndexManager extends WithLogging {
     this.log(
       `Files - New: ${newCount}, Modified: ${modifiedCount}, Deleted: ${deletedCount}, Unchanged: ${skippedCount}`
     );
+    if (missingImageEmbeddingCount > 0) {
+      this.log(
+        `Re-indexing ${missingImageEmbeddingCount} images for multimodal embedding`
+      );
+    }
 
     const { errored, skipped, skippedFilePaths, cancelled } =
       await this.processBatchOperations(operations, progressCallback);
