@@ -1,5 +1,23 @@
 # Obsidian Sonar
 
+-----
+## Fork changes
+
+This fork introduces the following changes compared to the
+[upstream](https://github.com/aviatesk/obsidian-sonar):
+
+1. **Vector search with zvec**: Replaced the original brute-force vector
+   retrieval with [zvec](https://github.com/alibaba/zvec), an efficient
+   vector search engine from Alibaba.
+2. **Image file indexing and retrieval**: Added support for indexing and
+   searching image files. Because llama.cpp has limited multimodal support,
+   this temporarily uses the
+   [Dashscope/Bailian](https://bailian.console.aliyun.com/) API for image
+   embeddings. The goal is to move back to fully local processing once
+   llama.cpp multimodal capabilities mature.
+
+-----
+
 > **Deep knowledge retrieval for Obsidian, completely offline.**
 
 Like sonar detecting hidden objects beneath the surface, Sonar discovers
