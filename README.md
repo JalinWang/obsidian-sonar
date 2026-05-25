@@ -16,6 +16,28 @@ This fork introduces the following changes compared to the
    embeddings. The goal is to move back to fully local processing once
    llama.cpp multimodal capabilities mature.
 
+### install the plugin
+
+```bash
+git clone https://github.com/JalinWang/obsidian-sonar.git
+cd obsidian-sonar
+npm install
+npm run dist
+```
+
+This produces a `dist/obsidian-sonar/` directory containing all necessary
+files. Copy it into your vault:
+
+```bash
+# macOS / Linux
+cp -r dist/obsidian-sonar /path/to/vault/.obsidian/plugins/
+
+# Windows (PowerShell)
+Copy-Item -Recurse dist\obsidian-sonar "$env:VAULT\.obsidian\plugins\"
+```
+
+Then enable the plugin in Obsidian and fill in the API keys in the plugin setting.
+
 -----
 
 > **Deep knowledge retrieval for Obsidian, completely offline.**
@@ -77,24 +99,25 @@ cmake --build build --config Release
 # Binaries are in ./build/bin/
 ```
 
-### 2. Install the plugin
+### 2. Build and install the plugin
 
-You can install Sonar either via
+```bash
+git clone https://github.com/anthropics/obsidian-sonar.git
+cd obsidian-sonar
+npm install
+npm run dist
+```
 
-- **BRAT:**
-  1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from the
-     community plugins
-  2. Open BRAT settings and select **Add Beta plugin**
-  3. Enter `https://github.com/aviatesk/obsidian-sonar` and click **Add Plugin**
+This produces a `dist/obsidian-sonar/` directory containing all necessary
+files. Copy it into your vault:
 
-- **Manual installation** (requires Node.js 18+):
-  ```bash
-  git clone https://github.com/aviatesk/obsidian-sonar.git
-  cd obsidian-sonar
-  npm install
-  npm run build
-  cp main.js manifest.json styles.css /path/to/your/vault/.obsidian/plugins/obsidian-sonar/
-  ```
+```bash
+# macOS / Linux
+cp -r dist/obsidian-sonar /path/to/vault/.obsidian/plugins/
+
+# Windows (PowerShell)
+Copy-Item -Recurse dist\obsidian-sonar "$env:VAULT\.obsidian\plugins\"
+```
 
 ### 3. Enable the plugin
 
