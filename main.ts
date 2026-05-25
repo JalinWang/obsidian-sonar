@@ -1,9 +1,5 @@
-import { Notice, Plugin, setTooltip, TFile, WorkspaceLeaf } from 'obsidian';
-import { SearchManager } from './src/SearchManager';
-import { EmbeddingSearch } from './src/EmbeddingSearch';
-import { BM25Store } from './src/BM25Store';
-import { BM25Search } from './src/BM25Search';
-import { DEFAULT_SETTINGS } from './src/config';
+import { Notice, Plugin } from 'obsidian';
+import { DEFAULT_SETTINGS } from './src/config/config';
 import {
   RelatedNotesView,
   RELATED_NOTES_VIEW_TYPE,
@@ -12,30 +8,29 @@ import {
   SemanticNoteFinder,
   SEMANTIC_NOTE_FINDER_SOURCE,
 } from './src/ui/SemanticNoteFinder';
-import { IndexManager } from './src/IndexManager';
-import { ConfigManager } from './src/ConfigManager';
+import { IndexManager } from './src/indexing/IndexManager';
+import { ConfigManager } from './src/config/ConfigManager';
 import { SettingTab } from './src/ui/SettingTab';
-import { getDBName, MetadataStore } from './src/MetadataStore';
-import { EmbeddingStore } from './src/EmbeddingStore';
-import {
-  ZvecEmbeddingStore,
-  configureZvecPluginDir,
-} from './src/ZvecEmbeddingStore';
-import type { Embedder } from './src/Embedder';
-import type { Reranker } from './src/Reranker';
-import { LlamaCppEmbedder } from './src/llamacpp/LlamaCppEmbedder';
-import { LlamaCppReranker } from './src/llamacpp/LlamaCppReranker';
-import { DashScopeEmbedder } from './src/dashscope/DashScopeEmbedder';
-import { DashScopeReranker } from './src/dashscope/DashScopeReranker';
+import { getDBName, MetadataStore } from './src/storage/MetadataStore';
+import { ZvecEmbeddingStore } from './src/storage/ZvecEmbeddingStore';
+import type { Embedder } from './src/core/Embedder';
+import type { Reranker } from './src/core/Reranker';
+import { SearchManager } from './src/search/SearchManager';
 import { CHAT_VIEW_TYPE, ChatView } from './src/ui/ChatView';
-import { isAudioExtension } from './src/audio';
-import { confirmAction } from './src/obsidian-utils';
+import { confirmAction } from './src/utils/obsidian-utils';
 import {
   sonarState,
   getState,
   checkSearchReady,
   checkHasFailure,
-} from './src/SonarState';
+} from './src/core/SonarState';
+import {
+  getEmbedderModelIdentifier,
+  initializeSonar,
+} from './src/bootstrap/initializer';
+import { registerCommands } from './src/bootstrap/commands';
+import { registerFileMenuHandlers } from './src/bootstrap/fileMenuHandlers';
+import { updateStatusBar as renderStatusBar } from './src/bootstrap/statusBar';
 
 export default class SonarPlugin extends Plugin {
   configManager!: ConfigManager;
@@ -50,7 +45,7 @@ export default class SonarPlugin extends Plugin {
   private reinitializing = false;
   private indexUpdateUnsubscribe: (() => void) | null = null;
 
-  private log(msg: string): void {
+  log(msg: string): void {
     this.configManager.getLogger().log(`[Sonar.Plugin] ${msg}`);
   }
 
@@ -62,63 +57,10 @@ export default class SonarPlugin extends Plugin {
     this.configManager.getLogger().warn(`[Sonar.Plugin] ${msg}`);
   }
 
-  private getEmbedderModelIdentifier(): string {
-    const backend = this.configManager.get('embeddingBackend');
-    if (backend === 'dashscope') {
-      const model =
-        this.configManager.get('dashscopeEmbeddingModel') ||
-        DEFAULT_SETTINGS.dashscopeEmbeddingModel;
-      const dimension =
-        this.configManager.get('dashscopeEmbeddingDimension') ||
-        DEFAULT_SETTINGS.dashscopeEmbeddingDimension;
-      return `dashscope/${model}/${dimension}`;
-    }
-    const modelRepo =
-      this.configManager.get('llamaEmbedderModelRepo') ||
-      DEFAULT_SETTINGS.llamaEmbedderModelRepo;
-    const modelFile =
-      this.configManager.get('llamaEmbedderModelFile') ||
-      DEFAULT_SETTINGS.llamaEmbedderModelFile;
-    return `${modelRepo}/${modelFile}`;
-  }
-
-  private formatStatusBarText(status: string): string {
-    return `Sonar: ${status}`;
-  }
-
   updateStatusBar(text: string, tooltip?: string): void {
-    const maxLength = this.configManager.get('statusBarMaxLength');
-    const fullText = this.formatStatusBarText(text);
-
-    // Always set tooltip to show full text (use custom tooltip if provided)
-    setTooltip(
-      this.statusBarItem,
-      tooltip ? this.formatStatusBarText(tooltip) : fullText,
-      { placement: 'top', gap: 8 }
-    );
-
-    let paddedText = text;
-    if (maxLength > 0 && text.length > maxLength) {
-      // Need at least 4 characters for ellipsis truncation (e.g., "a...b")
-      if (maxLength >= 4) {
-        const halfLength = Math.floor((maxLength - 3) / 2);
-        const prefix = text.slice(0, halfLength);
-        const suffix = text.slice(-(maxLength - halfLength - 3));
-        paddedText = prefix + '...' + suffix;
-      } else {
-        // For very short maxLength, just truncate
-        paddedText = text.slice(0, maxLength);
-      }
-    } else if (maxLength > 0) {
-      paddedText = text.padEnd(maxLength);
-    }
-    this.statusBarItem.setText(this.formatStatusBarText(paddedText));
+    renderStatusBar(this.statusBarItem, this.configManager, text, tooltip);
   }
 
-  /**
-   * Show confirmation dialog for model download
-   * Used by ChatView for chat model downloads
-   */
   confirmModelDownload(modelType: string, modelId: string): Promise<boolean> {
     return confirmAction(
       this.app,
@@ -129,43 +71,6 @@ export default class SonarPlugin extends Plugin {
         `the model settings in **Settings → Sonar**, then reinitialize.`,
       'Download'
     );
-  }
-
-  private async initializeEmbedder(
-    embedder: Embedder,
-    backendName: string,
-    modelDescription: string
-  ): Promise<boolean> {
-    try {
-      await embedder.initialize();
-      this.log(`${backendName} embedder initialized: ${modelDescription}`);
-      return true;
-    } catch (error) {
-      this.error(`Failed to initialize ${backendName} embedder: ${error}`);
-      new Notice(
-        `Failed to initialize ${backendName} embedder.\n\n` +
-          `Check console for details.\n\n` +
-          `You can change settings and run "Sonar: Reinitialize Sonar" command to retry.`,
-        0
-      );
-      await embedder.cleanup();
-      return false;
-    }
-  }
-
-  private async initializeReranker(
-    reranker: Reranker,
-    modelDescription: string
-  ): Promise<boolean> {
-    try {
-      await reranker.initialize();
-      this.log(`Reranker initialized: ${modelDescription}`);
-      return true;
-    } catch (error) {
-      this.warn(`Failed to initialize reranker: ${error}`);
-      await reranker.cleanup();
-      return false;
-    }
   }
 
   async reinitializeSonar(): Promise<void> {
@@ -238,13 +143,11 @@ export default class SonarPlugin extends Plugin {
       DEFAULT_SETTINGS
     );
 
-    // UI elements - needed immediately
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.addClass('mod-clickable');
     this.statusBarItem.onClickEvent(async (evt: MouseEvent) => {
       const state = getState();
 
-      // Cmd+click (Mac) or Ctrl+click (Windows/Linux)
       if (evt.metaKey || evt.ctrlKey) {
         const modifierAction = state.onStatusBarModifierClick;
         if (!modifierAction) return;
@@ -273,16 +176,13 @@ export default class SonarPlugin extends Plugin {
       }
     });
 
-    // Subscribe to state changes for reactive status bar updates
     const unsubscribe = sonarState.subscribe(state => {
-      // Derive final status from ModelStatus (failures take priority)
       if (checkHasFailure(state)) {
         this.updateStatusBar('Initialization failed');
         return;
       }
       if (checkSearchReady(state)) {
-        // Once ready, IndexManager takes over status bar updates
-        // via statusBarText for showing index progress
+        // IndexManager takes over status bar updates once ready
       }
       let tooltip = state.statusBarTooltip;
       if (state.onStatusBarClick) {
@@ -297,298 +197,40 @@ export default class SonarPlugin extends Plugin {
     });
     this.register(() => unsubscribe());
 
-    // Register commands immediately (lightweight)
-    this.registerCommands();
-    this.registerFileMenuHandlers();
+    registerCommands(this);
+    registerFileMenuHandlers(this);
     const settingTab = new SettingTab(this.app, this);
     this.addSettingTab(settingTab);
 
-    // Register views once
     this.registerViews();
 
-    // Register quit event for cleanup when Obsidian closes
-    // Note: onunload() is NOT called when Obsidian closes, only on plugin reload
-    // The quit event is not guaranteed to complete - OS may kill process at any time
     this.registerEvent(
       this.app.workspace.on('quit', () => {
         this.log('Quit event triggered, performing cleanup...');
-        // Fire-and-forget: best effort cleanup before process terminates
         this.performCleanup().catch(error => {
           this.error(`Cleanup during quit failed: ${error}`);
         });
       })
     );
 
-    // Defer heavy initialization to avoid blocking plugin load
     this.app.workspace.onLayoutReady(() => {
       if (this.configManager.get('autoOpenRelatedNotes')) {
         this.activateRelatedNotesView();
       }
-      this.initializeAsync();
+      void this.initializeAsync();
     });
   }
 
-  private createConfirmDownload(
-    modelType: string
-  ): (modelId: string) => Promise<boolean> {
-    return (modelId: string) => this.confirmModelDownload(modelType, modelId);
-  }
-
   private async initializeAsync(): Promise<boolean> {
-    const embeddingBackend = this.configManager.get('embeddingBackend');
-    const rerankBackend = this.configManager.get('rerankBackend');
+    const services = await initializeSonar(this, this.configManager);
+    if (!services) return false;
 
-    let embedder: Embedder;
-    let embedderModelIdentifier: string;
-
-    if (embeddingBackend === 'dashscope') {
-      const apiKey = this.configManager.get('dashscopeApiKey');
-      const baseUrl =
-        this.configManager.get('dashscopeBaseUrl') ||
-        DEFAULT_SETTINGS.dashscopeBaseUrl;
-      const model =
-        this.configManager.get('dashscopeEmbeddingModel') ||
-        DEFAULT_SETTINGS.dashscopeEmbeddingModel;
-      const dimension =
-        this.configManager.get('dashscopeEmbeddingDimension') ||
-        DEFAULT_SETTINGS.dashscopeEmbeddingDimension;
-      embedderModelIdentifier = `dashscope/${model}/${dimension}`;
-      const multimodal = this.configManager.get('embeddingMultimodal');
-      embedder = new DashScopeEmbedder(
-        apiKey,
-        baseUrl,
-        model,
-        dimension,
-        this.configManager,
-        status => sonarState.setEmbedderStatus(status),
-        multimodal
-      );
-    } else {
-      const serverPath = this.configManager.get('llamacppServerPath');
-      const embedderModelRepo =
-        this.configManager.get('llamaEmbedderModelRepo') ||
-        DEFAULT_SETTINGS.llamaEmbedderModelRepo;
-      const embedderModelFile =
-        this.configManager.get('llamaEmbedderModelFile') ||
-        DEFAULT_SETTINGS.llamaEmbedderModelFile;
-      embedderModelIdentifier = `${embedderModelRepo}/${embedderModelFile}`;
-      embedder = new LlamaCppEmbedder(
-        serverPath,
-        embedderModelRepo,
-        embedderModelFile,
-        this.configManager,
-        status => sonarState.setEmbedderStatus(status),
-        (msg, duration) => new Notice(msg, duration),
-        this.createConfirmDownload('embedder')
-      );
-    }
-    this.embedder = embedder;
-
-    let reranker: Reranker;
-    let rerankerModelIdentifier: string;
-
-    if (rerankBackend === 'dashscope') {
-      const apiKey = this.configManager.get('dashscopeApiKey');
-      const baseUrl =
-        this.configManager.get('dashscopeBaseUrl') ||
-        DEFAULT_SETTINGS.dashscopeBaseUrl;
-      const model =
-        this.configManager.get('dashscopeRerankModel') ||
-        DEFAULT_SETTINGS.dashscopeRerankModel;
-      rerankerModelIdentifier = `dashscope/${model}`;
-      const rerankMultimodal = this.configManager.get('rerankMultimodal');
-      reranker = new DashScopeReranker(
-        apiKey,
-        baseUrl,
-        model,
-        this.configManager,
-        status => sonarState.setRerankerStatus(status),
-        rerankMultimodal
-      );
-    } else {
-      const serverPath = this.configManager.get('llamacppServerPath');
-      const rerankerModelRepo =
-        this.configManager.get('llamaRerankerModelRepo') ||
-        DEFAULT_SETTINGS.llamaRerankerModelRepo;
-      const rerankerModelFile =
-        this.configManager.get('llamaRerankerModelFile') ||
-        DEFAULT_SETTINGS.llamaRerankerModelFile;
-      rerankerModelIdentifier = `${rerankerModelRepo}/${rerankerModelFile}`;
-      reranker = new LlamaCppReranker(
-        serverPath,
-        rerankerModelRepo,
-        rerankerModelFile,
-        this.configManager,
-        status => sonarState.setRerankerStatus(status),
-        (msg, duration) => new Notice(msg, duration),
-        this.createConfirmDownload('reranker')
-      );
-    }
-    this.reranker = reranker;
-
-    const [embedderInitialized] = await Promise.all([
-      this.initializeEmbedder(
-        embedder,
-        embeddingBackend,
-        embedderModelIdentifier
-      ),
-      this.initializeReranker(reranker, rerankerModelIdentifier),
-    ]);
-    if (!embedderInitialized) return false;
-
-    sonarState.setMetadataStoreStatus('initializing');
-    sonarState.setStatusBarText('Loading metadata store...');
-    try {
-      this.metadataStore = await MetadataStore.initialize(
-        this.app.vault.getName(),
-        embeddingBackend,
-        embedderModelIdentifier,
-        this.configManager
-      );
-    } catch (error) {
-      sonarState.setMetadataStoreStatus('failed');
-      this.error(`Failed to initialize metadata store: ${error}`);
-      new Notice(
-        'Failed to initialize metadata store.\n\n' +
-          'Check console for details.\n\n' +
-          'You can change settings and run "Sonar: Reinitialize Sonar" command to retry.',
-        0
-      );
-      return false;
-    }
-
-    sonarState.setMetadataStoreStatus('ready');
-
-    const db = this.metadataStore.getDB();
-
-    const basePath = (
-      this.app.vault.adapter as { getBasePath?: () => string }
-    ).getBasePath?.();
-    if (!basePath) {
-      this.error('Failed to get vault base path for zvec store');
-      new Notice(
-        'Failed to initialize vector store: vault base path unavailable.\n\n' +
-          'Check console for details.',
-        0
-      );
-      return false;
-    }
-
-    const sanitizeForPath = (str: string): string =>
-      str.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
-
-    // Provide the absolute plugin directory so ZvecEmbeddingStore can load
-    // the native binary via an absolute path (Electron's plugin: URL scheme
-    // prevents bare require('@zvec/...') from resolving node_modules).
-    const pluginDir = `${basePath}/${this.manifest.dir}`;
-    configureZvecPluginDir(pluginDir);
-
-    const zvecCollectionPath = `${basePath}/.obsidian/plugins/obsidian-sonar/zvec/${sanitizeForPath(embedderModelIdentifier)}`;
-
-    sonarState.setStatusBarText('Loading vector store...');
-    let zvecStore: ZvecEmbeddingStore;
-    try {
-      zvecStore = await ZvecEmbeddingStore.initialize(
-        zvecCollectionPath,
-        embedder.dimension,
-        this.configManager
-      );
-    } catch (error) {
-      this.error(`Failed to initialize vector store: ${error}`);
-      new Notice(
-        'Failed to initialize vector store.\n\n' +
-          'Check console for details.\n\n' +
-          'You can change settings and run "Sonar: Reinitialize Sonar" command to retry.',
-        0
-      );
-      return false;
-    }
-    this.zvecStore = zvecStore;
-
-    const migratedCount = await ZvecEmbeddingStore.migrateFromIDB(
-      db,
-      zvecStore
-    );
-    if (migratedCount > 0) {
-      this.log(`Migrated ${migratedCount} embeddings from IndexedDB to zvec`);
-    }
-
-    let bm25Store: BM25Store;
-    sonarState.setBm25StoreStatus('initializing');
-    sonarState.setStatusBarText('Loading BM25 store...');
-    try {
-      bm25Store = await BM25Store.initialize(db, this.configManager);
-    } catch (error) {
-      sonarState.setBm25StoreStatus('failed');
-      this.error(`Failed to initialize BM25 store: ${error}`);
-      new Notice(
-        'Failed to initialize BM25 store.\n\n' +
-          'Check console for details.\n\n' +
-          'You can change settings and run "Sonar: Reinitialize Sonar" command to retry.',
-        0
-      );
-      return false;
-    }
-    sonarState.setBm25StoreStatus('ready');
-
-    const bm25Search = new BM25Search(
-      bm25Store,
-      this.metadataStore,
-      this.configManager
-    );
-
-    const idbEmbeddingStore = new EmbeddingStore(db, this.configManager);
-
-    const embeddingSearch = new EmbeddingSearch(
-      this.metadataStore,
-      zvecStore,
-      idbEmbeddingStore,
-      this.embedder,
-      this.configManager
-    );
-
-    this.searchManager = new SearchManager(
-      embeddingSearch,
-      bm25Search,
-      this.reranker!,
-      this.configManager,
-      async (filePath: string) => {
-        const file = this.app.vault.getFileByPath(filePath);
-        if (!file) return null;
-        const buffer = await this.app.vault.readBinary(file);
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        const mimeType = `image/${file.extension}`;
-        return `data:${mimeType};base64,${btoa(binary)}`;
-      }
-    );
-
-    this.indexManager = new IndexManager(
-      this.metadataStore,
-      idbEmbeddingStore,
-      zvecStore,
-      bm25Store,
-      this.embedder,
-      this.app.vault,
-      this.app.workspace,
-      this.configManager
-    );
-
-    try {
-      await this.indexManager.onLayoutReady();
-    } catch (error) {
-      this.error(`Failed to initialize Sonar: ${error}`);
-      new Notice(
-        'Failed to initialize Sonar.\n\n' +
-          'Check console for details.\n\n' +
-          'You can change settings and run "Reinitialize Sonar" action/command to retry.',
-        0
-      );
-      return false;
-    }
+    this.embedder = services.embedder;
+    this.reranker = services.reranker;
+    this.metadataStore = services.metadataStore;
+    this.zvecStore = services.zvecStore;
+    this.searchManager = services.searchManager;
+    this.indexManager = services.indexManager;
 
     this.indexUpdateUnsubscribe = this.indexManager.onIndexUpdated(() => {
       this.semanticNoteFinder?.invalidateCache();
@@ -601,7 +243,7 @@ export default class SonarPlugin extends Plugin {
     return this.indexManager !== null;
   }
 
-  private checkInitialized(): boolean {
+  checkInitialized(): boolean {
     if (!this.isInitialized()) {
       const state = getState();
       if (state.embedder === 'failed') {
@@ -661,291 +303,24 @@ export default class SonarPlugin extends Plugin {
     });
   }
 
-  private registerCommands(): void {
-    this.addCommand({
-      id: 'reinitialize-sonar',
-      name: 'Reinitialize Sonar',
-      callback: async () => {
-        await this.reinitializeSonar();
-      },
-    });
+  async activateView(viewType: string): Promise<void> {
+    const { workspace } = this.app;
 
-    this.addCommand({
-      id: 'sync-index',
-      name: 'Sync search index with vault',
-      callback: async () => {
-        if (!this.checkInitialized()) return;
-        await this.indexManager!.syncIndex();
-      },
-    });
-
-    this.addCommand({
-      id: 'clear-current-index',
-      name: 'Clear current search index',
-      callback: async () => {
-        if (!this.checkInitialized()) return;
-        const confirmed = await this.configManager.confirmClearCurrentIndex(
-          this.app
-        );
-        if (!confirmed) return;
-        await this.indexManager!.clearCurrentIndex();
-        new Notice('Current index cleared');
-      },
-    });
-
-    this.addCommand({
-      id: 'show-failed-files',
-      name: 'Show files that failed to index',
-      callback: async () => {
-        if (!this.checkInitialized()) return;
-        const failedFiles = await this.metadataStore!.getAllFailedFiles();
-        if (failedFiles.length === 0) {
-          new Notice('No files have failed to index');
-        } else {
-          const message = [
-            `Files that failed to index (${failedFiles.length}):`,
-            '',
-            ...failedFiles.map(
-              f =>
-                `- ${f.filePath} (failed at ${new Date(f.failedAt).toLocaleString()})`
-            ),
-          ].join('\n');
-          this.log(message);
-          new Notice(
-            `${failedFiles.length} files failed to index - check console for details`,
-            0
-          );
-        }
-      },
-    });
-
-    this.addCommand({
-      id: 'delete-vault-databases',
-      name: 'Delete all search databases for this vault',
-      callback: () => this.deleteAllVaultDatabases(),
-    });
-
-    this.addCommand({
-      id: 'rebuild-index',
-      name: 'Rebuild current search index',
-      callback: async () => {
-        if (!this.checkInitialized()) return;
-        const confirmed = await this.configManager.confirmRebuildIndex(
-          this.app
-        );
-        if (!confirmed) return;
-        await this.indexManager!.rebuildIndex((current, total, filePath) => {
-          this.log(`Rebuilding index: ${current}/${total} - ${filePath}`);
-        });
-      },
-    });
-
-    this.addCommand({
-      id: 'index-current-file',
-      name: 'Index current file',
-      callback: async () => {
-        if (!this.checkInitialized()) return;
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile) {
-          new Notice('No active file');
-          return;
-        }
-        await this.indexManager!.indexFile(activeFile);
-      },
-    });
-
-    this.addCommand({
-      id: 'cancel-indexing',
-      name: 'Cancel indexing',
-      callback: async () => {
-        const clickAction = getState().onStatusBarClick;
-        if (!clickAction) {
-          new Notice('No indexing operation in progress');
-          return;
-        }
-        const confirmed = await confirmAction(
-          this.app,
-          clickAction.confirmTitle,
-          clickAction.confirmMessage,
-          clickAction.confirmButton
-        );
-        if (confirmed) {
-          clickAction.action();
-        }
-      },
-    });
-
-    this.addCommand({
-      id: 'open-related-notes',
-      name: 'Open related notes view',
-      callback: () => {
-        this.activateRelatedNotesView();
-      },
-    });
-
-    this.addCommand({
-      id: 'open-semantic-note-finder',
-      name: 'Open Semantic note finder',
-      callback: () => {
-        this.openSemanticNoteFinder();
-      },
-    });
-
-    this.addCommand({
-      id: 'open-chat',
-      name: 'Open chat view',
-      callback: () => {
-        this.activateChatView();
-      },
-    });
-
-    this.addCommand({
-      id: 'show-indexable-files-stats',
-      name: 'Show indexable files statistics',
-      callback: async () => {
-        if (!this.checkInitialized()) return;
-        await this.indexManager!.showIndexableFilesStats();
-      },
-    });
-
-    // Register benchmark commands conditionally (only in development builds)
-    if (process.env.INCLUDE_BENCHMARK === 'true') {
-      this.registerBenchmarkCommands();
-    }
-  }
-
-  private async registerBenchmarkCommands(): Promise<void> {
-    const { registerRetrievalBenchmarkCommands } =
-      await import('./retrieval-bench/src/index');
-    const {
-      registerCragBenchmarkCommands,
-      registerCragUnifiedBenchmarkCommands,
-    } = await import('./rag-bench/src/index');
-    registerRetrievalBenchmarkCommands(this);
-    registerCragBenchmarkCommands(this);
-    registerCragUnifiedBenchmarkCommands(this);
-  }
-
-  private registerFileMenuHandlers(): void {
-    this.registerEvent(
-      this.app.workspace.on('file-menu', (menu, file) => {
-        if (!(file instanceof TFile)) return;
-        if (!file.extension) return;
-
-        if (isAudioExtension(file.extension)) {
-          menu.addItem(item => {
-            item
-              .setTitle('Create transcription note')
-              .setIcon('file-text')
-              .onClick(() => this.createTranscriptionNote(file));
-          });
-        } else if (file.extension === 'pdf') {
-          menu.addItem(item => {
-            item
-              .setTitle('Create PDF extract note')
-              .setIcon('file-text')
-              .onClick(() => this.createPdfExtractNote(file));
-          });
-        }
-      })
-    );
-  }
-
-  private async createTranscriptionNote(audioFile: TFile): Promise<void> {
-    if (!this.checkInitialized()) return;
-
-    const chunks = await this.metadataStore!.getChunksByFile(audioFile.path);
-    if (chunks.length === 0) {
-      new Notice(
-        `No transcription found for ${audioFile.name}.\n\n` +
-          'Please index this file first.'
-      );
+    const leaves = workspace.getLeavesOfType(viewType);
+    if (leaves.length > 0) {
+      workspace.revealLeaf(leaves[0]);
       return;
     }
 
-    // Sort chunks by id (which includes chunk index) and join content
-    chunks.sort((a, b) => a.id.localeCompare(b.id));
-    const transcriptionText = chunks.map(c => c.content).join('\n\n');
-
-    const audioFolder = audioFile.parent?.path || '';
-    const noteName = audioFile.basename;
-    const notePath = audioFolder
-      ? `${audioFolder}/${noteName}.md`
-      : `${noteName}.md`;
-
-    const existingFile = this.app.vault.getAbstractFileByPath(notePath);
-    if (existingFile) {
-      new Notice(`Note already exists: ${notePath}`);
-      const leaf = this.app.workspace.getLeaf();
-      await leaf.openFile(existingFile as TFile);
-      return;
+    const rightLeaf = workspace.getRightLeaf(false);
+    if (rightLeaf) {
+      await rightLeaf.setViewState({ type: viewType, active: true });
+      workspace.revealLeaf(rightLeaf);
     }
-
-    const content = `[[${audioFile.name}]]\n\n${transcriptionText}`;
-    const newFile = await this.app.vault.create(notePath, content);
-    new Notice(`Created transcription note: ${notePath}`);
-
-    const leaf = this.app.workspace.getLeaf();
-    await leaf.openFile(newFile);
-  }
-
-  private async createPdfExtractNote(pdfFile: TFile): Promise<void> {
-    if (!this.checkInitialized()) return;
-
-    const chunks = await this.metadataStore!.getChunksByFile(pdfFile.path);
-    if (chunks.length === 0) {
-      new Notice(
-        `No extracted text found for ${pdfFile.name}.\n\n` +
-          'Please index this file first.'
-      );
-      return;
-    }
-
-    chunks.sort((a, b) => a.id.localeCompare(b.id));
-    const extractedText = chunks.map(c => c.content).join('\n\n');
-
-    const pdfFolder = pdfFile.parent?.path || '';
-    const noteName = pdfFile.basename;
-    const notePath = pdfFolder
-      ? `${pdfFolder}/${noteName}.md`
-      : `${noteName}.md`;
-
-    const existingFile = this.app.vault.getAbstractFileByPath(notePath);
-    if (existingFile) {
-      new Notice(`Note already exists: ${notePath}`);
-      const leaf = this.app.workspace.getLeaf();
-      await leaf.openFile(existingFile as TFile);
-      return;
-    }
-
-    const content = `[[${pdfFile.name}]]\n\n${extractedText}`;
-    const newFile = await this.app.vault.create(notePath, content);
-    new Notice(`Created PDF extract note: ${notePath}`);
-
-    const leaf = this.app.workspace.getLeaf();
-    await leaf.openFile(newFile);
   }
 
   async activateRelatedNotesView() {
-    const { workspace } = this.app;
-
-    let leaf: WorkspaceLeaf | null = null;
-    const leaves = workspace.getLeavesOfType(RELATED_NOTES_VIEW_TYPE);
-
-    if (leaves.length > 0) {
-      leaf = leaves[0];
-      workspace.revealLeaf(leaf);
-    } else {
-      const rightLeaf = workspace.getRightLeaf(false);
-      if (rightLeaf) {
-        leaf = rightLeaf;
-        await leaf.setViewState({
-          type: RELATED_NOTES_VIEW_TYPE,
-          active: true,
-        });
-        workspace.revealLeaf(leaf);
-      }
-    }
+    await this.activateView(RELATED_NOTES_VIEW_TYPE);
   }
 
   openSemanticNoteFinder(): void {
@@ -958,25 +333,7 @@ export default class SonarPlugin extends Plugin {
   }
 
   async activateChatView(): Promise<void> {
-    const { workspace } = this.app;
-
-    let leaf: WorkspaceLeaf | null = null;
-    const leaves = workspace.getLeavesOfType(CHAT_VIEW_TYPE);
-
-    if (leaves.length > 0) {
-      leaf = leaves[0];
-      workspace.revealLeaf(leaf);
-    } else {
-      const rightLeaf = workspace.getRightLeaf(false);
-      if (rightLeaf) {
-        leaf = rightLeaf;
-        await leaf.setViewState({
-          type: CHAT_VIEW_TYPE,
-          active: true,
-        });
-        workspace.revealLeaf(leaf);
-      }
-    }
+    await this.activateView(CHAT_VIEW_TYPE);
   }
 
   async deleteAllVaultDatabases(): Promise<void> {
@@ -1001,10 +358,9 @@ export default class SonarPlugin extends Plugin {
       return;
     }
 
-    // Close current database connections if they're in the list to be deleted
     if (this.metadataStore) {
       const backend = this.configManager.get('embeddingBackend');
-      const modelIdentifier = this.getEmbedderModelIdentifier();
+      const modelIdentifier = getEmbedderModelIdentifier(this.configManager);
       const currentDbName = getDBName(vaultName, backend, modelIdentifier);
 
       if (databases.includes(currentDbName)) {
@@ -1055,8 +411,6 @@ export default class SonarPlugin extends Plugin {
     if (this.metadataStore) {
       await this.metadataStore.close();
     }
-    // Run server cleanups in parallel to maximize chance of completion
-    // before quit event terminates the process
     await Promise.all([this.embedder?.cleanup(), this.reranker?.cleanup()]);
   }
 

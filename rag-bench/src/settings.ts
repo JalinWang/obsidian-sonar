@@ -1,5 +1,5 @@
 import { App, MarkdownRenderer, Setting } from 'obsidian';
-import type { ConfigManager } from '../../src/ConfigManager';
+import type { ConfigManager } from '../../src/config/ConfigManager';
 import type SonarPlugin from '../../main';
 
 function renderMarkdownDesc(

@@ -1,11 +1,10 @@
 <script lang="ts">
   import { App, TFile } from 'obsidian';
-  import type { SearchResult } from '../SearchManager';
+  import type { SearchResult } from '../search/SearchManager';
   import { MarkdownRenderingManager } from './MarkdownRenderingManager';
   import { onDestroy, untrack } from 'svelte';
-  import type { ConfigManager } from '../ConfigManager';
-
-  const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+  import type { ConfigManager } from '../config/ConfigManager';
+  import { isImageFilePath } from '../indexing/fileFilters';
 
   interface Props {
     app: App;
@@ -52,11 +51,6 @@
         markdownManager.cleanupElement(node);
       },
     };
-  }
-
-  function isImage(filePath: string): boolean {
-    const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-    return IMAGE_EXTENSIONS.includes(ext);
   }
 
   function getImageResourceUrl(filePath: string): string {
@@ -185,7 +179,7 @@
           {/if}
 
           {#if showExcerpts}
-            {#if isImage(result.filePath)}
+            {#if isImageFilePath(result.filePath)}
               <div class="result-image-preview">
                 <img
                   src={getImageResourceUrl(result.filePath)}

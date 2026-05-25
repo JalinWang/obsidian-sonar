@@ -1,11 +1,14 @@
 import { App, HoverPopover, Modal, Notice, debounce } from 'obsidian';
 import { mount, unmount } from 'svelte';
 import { writable, get } from 'svelte/store';
-import { isRerankerReady } from '../SonarState';
-import { SearchManager, type SearchResult } from '../SearchManager';
-import { ConfigManager } from '../ConfigManager';
-import { createComponentLogger, type ComponentLogger } from '../WithLogging';
-import { truncateQuery, formatDuration } from '../utils';
+import { isRerankerReady } from '../core/SonarState';
+import { SearchManager, type SearchResult } from '../search/SearchManager';
+import { ConfigManager } from '../config/ConfigManager';
+import {
+  createComponentLogger,
+  type ComponentLogger,
+} from '../core/WithLogging';
+import { truncateQuery, formatDuration } from '../utils/utils';
 import SemanticNoteFinderComponent from './SemanticNoteFinderComponent.svelte';
 
 interface SemanticSearchState {

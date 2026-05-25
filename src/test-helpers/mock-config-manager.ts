@@ -1,5 +1,5 @@
-import type { ConfigManager } from '../ConfigManager';
-import { DEFAULT_SETTINGS } from '../config';
+import type { ConfigManager } from '../config/ConfigManager';
+import { DEFAULT_SETTINGS } from '../config/config';
 
 export function createMockConfigManager(): ConfigManager {
   const mockLogger = {

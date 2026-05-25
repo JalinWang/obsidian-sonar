@@ -1,5 +1,5 @@
-import { LlamaCppEmbedder } from '../llamacpp/LlamaCppEmbedder';
-import { DEFAULT_SETTINGS } from '../config';
+import { LlamaCppEmbedder } from '../backends/llamacpp/LlamaCppEmbedder';
+import { DEFAULT_SETTINGS } from '../config/config';
 import { createMockConfigManager } from './mock-config-manager';
 
 let embedder: LlamaCppEmbedder | null = null;

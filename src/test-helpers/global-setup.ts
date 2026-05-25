@@ -1,5 +1,8 @@
-import { isModelCached, downloadModel } from '../llamacpp/llamaCppUtils';
-import { DEFAULT_SETTINGS } from '../config';
+import {
+  isModelCached,
+  downloadModel,
+} from '../backends/llamacpp/llamaCppUtils';
+import { DEFAULT_SETTINGS } from '../config/config';
 
 /**
  * Global setup for tests

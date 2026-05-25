@@ -1,8 +1,8 @@
 import { normalizePath } from 'obsidian';
 import { z } from 'zod';
 import type { Tool } from '../Tool';
-import type { SearchManager } from '../../SearchManager';
-import { getState, checkSearchReady } from '../../SonarState';
+import type { SearchManager } from '../../search/SearchManager';
+import { getState, checkSearchReady } from '../../core/SonarState';
 
 export interface SearchVaultDependencies {
   getSearchManager: () => SearchManager | null;

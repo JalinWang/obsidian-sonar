@@ -3,7 +3,7 @@
   import { onMount, untrack } from 'svelte';
   import SearchResults from './SearchResults.svelte';
 
-  import type { ConfigManager } from '../ConfigManager';
+  import type { ConfigManager } from '../config/ConfigManager';
 
   interface Props {
     app: App;

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { App, Notice, setIcon } from 'obsidian';
   import type { Writable } from 'svelte/store';
-  import type { ConfigManager } from '../ConfigManager';
-  import type { ChatTurn } from '../ChatManager';
+  import type { ConfigManager } from '../config/ConfigManager';
+  import type { ChatTurn } from '../chat/ChatManager';
   import type { ToolConfig, ToolPermissionRequest } from '../tools';
   import { MarkdownRenderingManager } from './MarkdownRenderingManager';
   import { isSendShortcut } from './ChatView';

@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 import type SonarPlugin from '../../main';
-import { DEFAULT_SETTINGS } from '../../src/config';
-import { LlamaCppChat } from '../../src/LlamaCppChat';
+import { DEFAULT_SETTINGS } from '../../src/config/config';
+import { LlamaCppChat } from '../../src/chat/LlamaCppChat';
 import { CragBenchmarkRunner } from './CragBenchmarkRunner';
 import { CragUnifiedBenchmarkRunner } from './CragUnifiedBenchmarkRunner';
 

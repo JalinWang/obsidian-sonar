@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { type App, TFile } from 'obsidian';
 import type { Tool } from '../Tool';
-import type { ConfigManager } from '../../ConfigManager';
+import type { ConfigManager } from '../../config/ConfigManager';
 
 export interface EditNoteDependencies {
   app: App;

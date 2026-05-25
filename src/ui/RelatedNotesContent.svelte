@@ -1,12 +1,10 @@
 <script lang="ts">
   import { App, Notice, setIcon, debounce } from 'obsidian';
-  import type { ConfigManager } from '../ConfigManager';
-  import { checkSearchReady, checkHasFailure, type SonarModelState } from '../SonarState';
-  import { STATUS_DISPLAY_TEXT, type RelatedNotesStatus } from './RelatedNotesView';
+  import type { ConfigManager } from '../config/ConfigManager';
+  import { checkSearchReady, checkHasFailure, type SonarModelState } from '../core/SonarState';
+  import { STATUS_DISPLAY_TEXT, type RelatedNotesStatus, type QueryMode } from './related-notes-types';
   import SearchResults from './SearchResults.svelte';
   import KnowledgeGraph from './KnowledgeGraph.svelte';
-
-  type QueryMode = 'default' | 'editing';
   import { onMount, onDestroy, untrack } from 'svelte';
 
   interface Props {

@@ -6,16 +6,16 @@ import {
   Setting,
   normalizePath,
 } from 'obsidian';
-import { ConfigManager } from '../ConfigManager';
+import { ConfigManager } from '../config/ConfigManager';
 import type SonarPlugin from '../../main';
-import { getIndexableFilesCount } from 'src/fileFilters';
+import { getIndexableFilesCount } from '../indexing/fileFilters';
 import type {
   AggregationMethod,
   EmbeddingBackend,
   LogLevel,
   RerankBackend,
-} from '../config';
-import { FileSuggestInput, FolderSuggestInput } from '../obsidian-utils';
+} from '../config/config';
+import { FileSuggestInput, FolderSuggestInput } from '../utils/obsidian-utils';
 
 export class SettingTab extends PluginSettingTab {
   plugin: SonarPlugin;

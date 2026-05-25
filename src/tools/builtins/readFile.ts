@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { type App, TFile } from 'obsidian';
 import type { Tool } from '../Tool';
-import type { MetadataStore } from '../../MetadataStore';
+import type { MetadataStore } from '../../storage/MetadataStore';
 
 export interface ReadFileDependencies {
   app: App;

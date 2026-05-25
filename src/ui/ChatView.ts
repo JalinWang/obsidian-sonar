@@ -8,11 +8,11 @@ import {
 } from 'obsidian';
 import { mount, unmount } from 'svelte';
 import { writable, get } from 'svelte/store';
-import { sonarState } from '../SonarState';
-import { DEFAULT_SETTINGS } from '../config';
-import type { ConfigManager } from '../ConfigManager';
-import { ChatManager, type ChatTurn } from '../ChatManager';
-import { LlamaCppChat } from '../LlamaCppChat';
+import { sonarState } from '../core/SonarState';
+import { DEFAULT_SETTINGS } from '../config/config';
+import type { ConfigManager } from '../config/ConfigManager';
+import { ChatManager, type ChatTurn } from '../chat/ChatManager';
+import { LlamaCppChat } from '../chat/LlamaCppChat';
 import {
   ToolRegistry,
   createSearchVaultTool,
@@ -23,7 +23,10 @@ import {
   type ToolConfig,
   type ToolPermissionRequest,
 } from '../tools';
-import { createComponentLogger, type ComponentLogger } from '../WithLogging';
+import {
+  createComponentLogger,
+  type ComponentLogger,
+} from '../core/WithLogging';
 import ChatViewContent from './ChatViewContent.svelte';
 import { FileSuggestModal, getWikilinkForFile } from './FileSuggestModal';
 import type SonarPlugin from '../../main';
@@ -31,17 +34,17 @@ import {
   VoiceRecorder,
   deleteTempFile,
   type RecordingState,
-} from '../VoiceRecorder';
-import { transcribeAudio, type AudioTranscriptionConfig } from '../audio';
+} from '../chat/VoiceRecorder';
+import {
+  transcribeAudio,
+  type AudioTranscriptionConfig,
+} from '../indexing/audio';
 
 export const CHAT_VIEW_TYPE = 'chat-view';
 
-/**
- * Check if keyboard event matches the send shortcut (Cmd+Ctrl+Enter)
- */
-export function isSendShortcut(e: KeyboardEvent): boolean {
-  return e.key === 'Enter' && e.metaKey && e.ctrlKey && !e.isComposing;
-}
+import { isSendShortcut } from './chat-view-types';
+
+export { isSendShortcut };
 
 export type ChatViewStatus = 'initializing' | 'ready' | 'processing' | 'error';
 

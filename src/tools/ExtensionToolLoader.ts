@@ -1,9 +1,9 @@
 import type { App, TFile } from 'obsidian';
 import { requestUrl } from 'obsidian';
-import type { ConfigManager } from '../ConfigManager';
-import type { SearchManager } from '../SearchManager';
-import type { MetadataStore } from '../MetadataStore';
-import { WithLogging } from '../WithLogging';
+import type { ConfigManager } from '../config/ConfigManager';
+import type { SearchManager } from '../search/SearchManager';
+import type { MetadataStore } from '../storage/MetadataStore';
+import { WithLogging } from '../core/WithLogging';
 import type { Tool, ToolDefinition } from './Tool';
 import type {
   ExtensionToolContext,

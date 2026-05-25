@@ -1,9 +1,9 @@
 import { Notice } from 'obsidian';
 import type { App } from 'obsidian';
-import { WithLogging } from '../../src/WithLogging';
-import type { ConfigManager } from '../../src/ConfigManager';
-import type { SearchManager, SearchOptions } from '../../src/SearchManager';
-import type { IndexManager } from '../../src/IndexManager';
+import { WithLogging } from '../../src/core/WithLogging';
+import type { ConfigManager } from '../../src/config/ConfigManager';
+import type { SearchManager, SearchOptions } from '../../src/search/SearchManager';
+import type { IndexManager } from '../../src/indexing/IndexManager';
 import { join, dirname, isAbsolute } from 'path';
 import { promises as fs } from 'fs';
 

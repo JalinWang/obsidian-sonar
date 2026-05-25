@@ -8,8 +8,8 @@ import {
   debounce,
 } from 'obsidian';
 import type { MarkdownPostProcessorContext } from 'obsidian';
-import type { PdfView, TextItem } from '../pdfjs';
-import { normalizeText } from '../pdfExtractor';
+import type { PdfView, TextItem } from '../indexing/pdfjs.d';
+import { normalizeText } from '../indexing/pdfExtractor';
 import { EditorView } from '@codemirror/view';
 import { mount, unmount } from 'svelte';
 import { writable, get } from 'svelte/store';
@@ -18,43 +18,30 @@ import {
   isSearchReady,
   isRerankerReady,
   type SonarModelState,
-} from '../SonarState';
-import type { SearchResult } from '../SearchManager';
-import { processQuery, type QueryOptions } from '../QueryProcessor';
-import { ConfigManager } from '../ConfigManager';
-import { getCurrentContext } from '../obsidian-utils';
-import { createComponentLogger, type ComponentLogger } from '../WithLogging';
-import { truncateQuery, formatDuration } from '../utils';
+} from '../core/SonarState';
+import type { SearchResult } from '../core/search-types';
+import { processQuery, type QueryOptions } from '../search/QueryProcessor';
+import { ConfigManager } from '../config/ConfigManager';
+import { getCurrentContext } from '../utils/obsidian-utils';
+import {
+  createComponentLogger,
+  type ComponentLogger,
+} from '../core/WithLogging';
+import { truncateQuery, formatDuration } from '../utils/utils';
 import RelatedNotesContent from './RelatedNotesContent.svelte';
 import type SonarPlugin from '../../main';
-import { isAudioExtension } from '../audio';
-import { isImageExtension } from '../fileFilters';
-import { ChunkId } from '../chunkId';
+import { isAudioExtension } from '../indexing/audio';
+import { isImageExtension } from '../indexing/fileFilters';
+import { ChunkId } from '../core/chunkId';
+import {
+  STATUS_DISPLAY_TEXT,
+  type RelatedNotesStatus,
+  type QueryMode,
+} from './related-notes-types';
+
+export { STATUS_DISPLAY_TEXT, type RelatedNotesStatus, type QueryMode };
 
 export const RELATED_NOTES_VIEW_TYPE = 'related-notes-view';
-
-export type RelatedNotesStatus =
-  | 'initializing'
-  | 'initialization-failed'
-  | 'no-active-note'
-  | 'processing'
-  | 'unable-to-determine-position'
-  | 'ready'
-  | 'no-content'
-  | 'error';
-
-export const STATUS_DISPLAY_TEXT: Record<RelatedNotesStatus, string> = {
-  initializing: 'Initializing...',
-  'initialization-failed': 'Initialization failed',
-  'no-active-note': 'No active note',
-  processing: 'Processing...',
-  'unable-to-determine-position': 'Unable to determine position',
-  ready: 'Ready to search',
-  'no-content': 'No content to search',
-  error: 'Failed to search',
-};
-
-export type QueryMode = 'default' | 'editing';
 
 interface RelatedNotesState {
   query: string;

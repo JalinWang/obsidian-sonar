@@ -1,6 +1,6 @@
 import { App, Component, MarkdownRenderer as MR } from 'obsidian';
-import type { ConfigManager } from '../ConfigManager';
-import { WithLogging } from '../WithLogging';
+import type { ConfigManager } from '../config/ConfigManager';
+import { WithLogging } from '../core/WithLogging';
 
 export interface MarkdownRenderingOptions {
   maxLength?: number;

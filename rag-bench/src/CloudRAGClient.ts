@@ -10,8 +10,8 @@
  */
 
 import { requestUrl } from 'obsidian';
-import { WithLogging } from '../../src/WithLogging';
-import type { ConfigManager } from '../../src/ConfigManager';
+import { WithLogging } from '../../src/core/WithLogging';
+import type { ConfigManager } from '../../src/config/ConfigManager';
 
 const OPENAI_EMBEDDING_URL = 'https://api.openai.com/v1/embeddings';
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';

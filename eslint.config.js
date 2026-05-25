@@ -14,6 +14,7 @@ export default [
     ignores: [
       'node_modules/**',
       'main.js',
+      'dist/**',
       'src/generated/**',
       'retrieval-bench/**',
       'rag-bench/**',
@@ -113,6 +114,19 @@ export default [
       'svelte/no-useless-mustaches': 'warn',
       'svelte/require-each-key': 'error',
       'svelte/prefer-svelte-reactivity': 'warn',
+    },
+  },
+
+  // Node.js scripts
+  {
+    files: ['scripts/**/*.mjs', 'esbuild.config.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+      },
     },
   },
 ];
