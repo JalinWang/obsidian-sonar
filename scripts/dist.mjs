@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 
-const DIST_DIR = 'dist';
+const DIST_DIR = join('dist', 'obsidian-sonar');
 const PLUGIN_FILES = ['main.js', 'manifest.json', 'styles.css'];
 
 const ZVEC_PLATFORMS = [
@@ -13,10 +13,10 @@ const ZVEC_PLATFORMS = [
 ];
 
 // Clean and create dist directory
-if (existsSync(DIST_DIR)) {
-  rmSync(DIST_DIR, { recursive: true });
+if (existsSync('dist')) {
+  rmSync('dist', { recursive: true });
 }
-mkdirSync(DIST_DIR);
+mkdirSync(DIST_DIR, { recursive: true });
 
 // Build
 console.log('Building...');
@@ -48,6 +48,6 @@ if (copiedCount === 0) {
 
 console.log(`\nDist ready: ./${DIST_DIR}/`);
 console.log(
-  "Copy the contents of this directory to your vault's " +
-    '.obsidian/plugins/obsidian-sonar/ folder.'
+  "Copy this directory to your vault's " +
+    '.obsidian/plugins/ folder.'
 );
